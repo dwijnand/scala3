@@ -10,7 +10,7 @@ import org.jline.reader
 import org.jline.reader.Parser.ParseContext
 import org.jline.reader._
 import org.jline.reader.impl.history.DefaultHistory
-import org.jline.terminal.TerminalBuilder
+import org.jline.terminal.{ Terminal, TerminalBuilder }
 import org.jline.utils.AttributedString
 
 final class JLineTerminal extends java.io.Closeable {
@@ -19,7 +19,6 @@ final class JLineTerminal extends java.io.Closeable {
 
   private val terminal =
     TerminalBuilder.builder()
-    .dumb(false) // fail early if not able to create a terminal
     .build()
   private val history = new DefaultHistory
 
@@ -65,7 +64,10 @@ final class JLineTerminal extends java.io.Closeable {
       .option(DISABLE_EVENT_EXPANSION, true)    // don't process escape sequences in input
       .build()
 
-    lineReader.readLine(prompt)
+    val l = lineReader.readLine(prompt)
+    if (terminal.getType == Terminal.TYPE_DUMB || terminal.getType == Terminal.TYPE_DUMB_COLOR)
+      lineReader.printAbove(l)
+    l
   }
 
   def close(): Unit = terminal.close()
