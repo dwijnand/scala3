@@ -489,27 +489,22 @@ class TypeApplications(val self: Type) extends AnyVal {
   /** Argument types where existential types in arguments are approximated by their upper bound  */
   def argTypesHi(using Context): List[Type] = argInfos.mapConserve(_.hiBound)
 
-  /** If this is the image of a type argument; recover the type argument,
-   *  otherwise NoType.
-   */
+  /** If this is the image of a type argument; recover the type argument, otherwise NoType. */
   final def argInfo(using Context): Type = self match {
-    case self: TypeAlias => self.alias
+    case self: TypeAlias  => self.alias
     case self: TypeBounds => self
-    case _ => NoType
+    case _                => NoType
   }
 
   /** If this is a type alias, its underlying type, otherwise the type itself */
-  def dropAlias(using Context): Type = self match {
-    case TypeAlias(alias) => alias
-    case _ => self
-  }
+  def dropAlias(using Context): Type = self match { case TypeAlias(x) => x case _ => self }
 
   /** The element type of a sequence or array */
   def elemType(using Context): Type = self.widenDealias match {
-    case defn.ArrayOf(elemtp) => elemtp
-    case JavaArrayType(elemtp) => elemtp
-    case tp: OrType if tp.tp1.isBottomType => tp.tp2.elemType
-    case tp: OrType if tp.tp2.isBottomType => tp.tp1.elemType
+    case defn.ArrayOf(elemtp)                 => elemtp
+    case JavaArrayType(elemtp)                => elemtp
+    case OrType(tp1, tp2) if tp1.isBottomType => tp2.elemType
+    case OrType(tp1, tp2) if tp2.isBottomType => tp1.elemType
     case _ => self.baseType(defn.SeqClass).argInfos.headOption.getOrElse(NoType)
   }
 }

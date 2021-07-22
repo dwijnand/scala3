@@ -1483,26 +1483,23 @@ class Typer extends Namer
     assignType(cpy.Closure(tree)(env1, meth1, target), meth1, target)
   }
 
-  def typedMatch(tree: untpd.Match, pt: Type)(using Context): Tree =
-    tree.selector match {
-      case EmptyTree =>
-        if (tree.isInline) {
-          checkInInlineContext("summonFrom", tree.srcPos)
-          val cases1 = tree.cases.mapconserve {
-            case cdef @ CaseDef(pat @ Typed(Ident(nme.WILDCARD), _), _, _) =>
-              // case _ : T  -->  case evidence$n : T
-              cpy.CaseDef(cdef)(pat = untpd.Bind(EvidenceParamName.fresh(), pat))
-            case cdef => cdef
-          }
-          typedMatchFinish(tree, tpd.EmptyTree, defn.ImplicitScrutineeTypeRef, cases1, pt)
+  def typedMatch(tree: untpd.Match, pt: Type)(using Context): Tree = tree.selector match {
+    case EmptyTree =>
+      if tree.isInline then
+        checkInInlineContext("summonFrom", tree.srcPos)
+        val cases1 = tree.cases.mapconserve {
+          case cdef @ CaseDef(pat @ Typed(Ident(nme.WILDCARD), _), _, _) =>
+            // case _ : T  -->  case evidence$n : T
+            cpy.CaseDef(cdef)(pat = untpd.Bind(EvidenceParamName.fresh(), pat))
+          case cdef => cdef
         }
-        else {
-          val (protoFormals, _) = decomposeProtoFunction(pt, 1, tree.srcPos)
-          val checkMode =
-            if (pt.isRef(defn.PartialFunctionClass)) desugar.MatchCheck.None
-            else desugar.MatchCheck.Exhaustive
-          typed(desugar.makeCaseLambda(tree.cases, checkMode, protoFormals.length).withSpan(tree.span), pt)
-        }
+        typedMatchFinish(tree, tpd.EmptyTree, defn.ImplicitScrutineeTypeRef, cases1, pt)
+      else
+        val (protoFormals, _) = decomposeProtoFunction(pt, 1, tree.srcPos)
+        val checkMode =
+          if (pt.isRef(defn.PartialFunctionClass)) desugar.MatchCheck.None
+          else desugar.MatchCheck.Exhaustive
+        typed(desugar.makeCaseLambda(tree.cases, checkMode, protoFormals.length).withSpan(tree.span), pt)
       case _ =>
         if tree.isInline then checkInInlineContext("inline match", tree.srcPos)
         val sel1 = typedExpr(tree.selector)
@@ -1520,67 +1517,60 @@ class Typer extends Namer
                     case mt: MatchType => Some(mt)
                     case _ => None
                   }
-                case _ => None
-              }
             case _ => None
           }
+          case _ => None
         }
+      }
 
-        /** Does `tree` has the same shape as the given match type?
-         *  We only support typed patterns with empty guards, but
-         *  that could potentially be extended in the future.
-         */
-        def isMatchTypeShaped(mt: MatchType): Boolean =
-          mt.cases.size == tree.cases.size
-          && sel1.tpe.frozen_<:<(mt.scrutinee)
-          && tree.cases.forall(_.guard.isEmpty)
-          && tree.cases
-            .map(cas => untpd.unbind(untpd.unsplice(cas.pat)))
-            .zip(mt.cases)
-            .forall {
-              case (pat: untpd.Typed, pt) =>
-                // To check that pattern types correspond we need to type
-                // check `pat` here and throw away the result.
-                val gadtCtx: Context = ctx.fresh.setFreshGADTBounds
-                val pat1 = typedPattern(pat, selType)(using gadtCtx)
-                val Typed(_, tpt) = tpd.unbind(tpd.unsplice(pat1))
-                instantiateMatchTypeProto(pat1, pt) match {
-                  case defn.MatchCase(patternTp, _) => tpt.tpe frozen_=:= patternTp
-                  case _ => false
-                }
+      /** Does `tree` has the same shape as the given match type?
+       *  We only support typed patterns with empty guards, but
+       *  that could potentially be extended in the future.
+       */
+      def isMatchTypeShaped(mt: MatchType): Boolean =
+        mt.cases.size == tree.cases.size &&
+        sel1.tpe.frozen_<:<(mt.scrutinee) &&
+        tree.cases.forall(_.guard.isEmpty) &&
+        tree.cases.map(cas => untpd.unbind(untpd.unsplice(cas.pat))).zip(mt.cases).forall {
+          case (pat: untpd.Typed, pt) =>
+            // To check that pattern types correspond we need to type
+            // check `pat` here and throw away the result.
+            val gadtCtx: Context = ctx.fresh.setFreshGADTBounds
+            val pat1 = typedPattern(pat, selType)(using gadtCtx)
+            val Typed(_, tpt) = tpd.unbind(tpd.unsplice(pat1))
+            instantiateMatchTypeProto(pat1, pt) match {
+              case defn.MatchCase(patternTp, _) => tpt.tpe frozen_=:= patternTp
               case _ => false
             }
-
-        val result = pt match {
-          case MatchTypeInDisguise(mt) if isMatchTypeShaped(mt) =>
-            typedDependentMatchFinish(tree, sel1, selType, tree.cases, mt)
-          case _ =>
-            typedMatchFinish(tree, sel1, selType, tree.cases, pt)
+          case _ => false
         }
 
-        result match {
-          case result @ Match(sel, CaseDef(pat, _, _) :: _) =>
-            tree.selector.removeAttachment(desugar.CheckIrrefutable) match {
-              case Some(checkMode) =>
-                val isPatDef = checkMode == desugar.MatchCheck.IrrefutablePatDef
-                if (!checkIrrefutable(sel, pat, isPatDef) && sourceVersion == `future-migration`)
-                  if (isPatDef) patch(Span(tree.selector.span.end), ": @unchecked")
-                  else patch(Span(pat.span.start), "case ")
+      val result = pt match {
+        case MatchTypeInDisguise(mt) if isMatchTypeShaped(mt) =>
+          typedDependentMatchFinish(tree, sel1, selType, tree.cases, mt)
+        case _ =>
+          typedMatchFinish(tree, sel1, selType, tree.cases, pt)
+      }
 
-                // skip exhaustivity check in later phase
-                // TODO: move the check above to patternMatcher phase
-                val uncheckedTpe = AnnotatedType(sel.tpe.widen, Annotation(defn.UncheckedAnnot))
-                tpd.cpy.Match(result)(
-                  selector = tpd.Typed(sel, tpd.TypeTree(uncheckedTpe)),
-                  cases = result.cases
-                )
-              case _ =>
-                result
-            }
-          case _ =>
-            result
-        }
-    }
+      result match {
+        case result @ Match(sel, CaseDef(pat, _, _) :: _) =>
+          tree.selector.removeAttachment(desugar.CheckIrrefutable) match {
+            case Some(checkMode) =>
+              val isPatDef = checkMode == desugar.MatchCheck.IrrefutablePatDef
+              if (!checkIrrefutable(sel, pat, isPatDef) && sourceVersion == `future-migration`)
+                if isPatDef
+                then patch(Span(tree.selector.span.end), ": @unchecked")
+                else patch(Span(pat.span.start), "case ")
+
+              // skip exhaustivity check in later phase
+              // TODO: move the check above to patternMatcher phase
+              val uncheckedTpe = AnnotatedType(sel.tpe.widen, Annotation(defn.UncheckedAnnot))
+              tpd.cpy.Match(result)(tpd.Typed(sel, tpd.TypeTree(uncheckedTpe)), result.cases)
+            case _ => result
+          }
+        case _ => result
+      }
+  }
 
   /** Special typing of Match tree when the expected type is a MatchType,
    *  and the patterns of the Match tree and the MatchType correspond.

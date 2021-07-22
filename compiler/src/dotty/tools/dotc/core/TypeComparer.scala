@@ -2658,7 +2658,7 @@ class TypeComparer(@constructorOnly initctx: Context) extends ConstraintHandling
   }
 
   protected def explainingTypeComparer = ExplainingTypeComparer(comparerContext)
-  protected def trackingTypeComparer = TrackingTypeComparer(comparerContext)
+  protected def trackingTypeComparer   = TrackingTypeComparer(comparerContext)
 
   private def inSubComparer[T, Cmp <: TypeComparer](comparer: Cmp)(op: Cmp => T): T =
     val saved = myInstance

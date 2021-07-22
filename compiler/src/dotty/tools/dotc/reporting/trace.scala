@@ -31,64 +31,50 @@ end trace
  *  of overhead is unacceptable: boxing, closures, additional method calls are all out.
  */
 trait TraceSyntax:
-
   inline def isEnabled: Boolean
   protected val isForced: Boolean
 
-  inline def onDebug[TD](inline question: String)(inline op: TD)(using Context): TD =
+  inline def onDebug[T](inline question: String)(inline op: T)(using Context): T =
     conditionally(ctx.settings.YdebugTrace.value, question, false)(op)
 
-  inline def conditionally[TC](inline cond: Boolean, inline question: String, inline show: Boolean)(inline op: TC)(using Context): TC =
-    inline if isEnabled then
-      apply(question, if cond then Printers.default else Printers.noPrinter, show)(op)
-    else op
+  inline def conditionally[T](inline cond: Boolean, inline question: String, inline show: Boolean)(inline op: T)(using Context): T =
+    apply(question, if cond then Printers.default else Printers.noPrinter, show)(op)
 
   inline def apply[T, U >: T](inline question: String, inline printer: Printers.Printer, inline showOp: U => String)(inline op: T)(using Context): T =
-    inline if isEnabled then
-      doTrace[T](question, printer, showOp)(op)
-    else op
+    inline if isEnabled then doTrace(question, printer, showOp)(op) else op
 
   inline def apply[T](inline question: String, inline printer: Printers.Printer, inline show: Boolean)(inline op: T)(using Context): T =
-    inline if isEnabled then
-      doTrace[T](question, printer, if show then showShowable(_) else alwaysToString)(op)
-    else op
+    apply(question, printer, if show then showShowable(_) else String.valueOf(_: Any))(op)
 
   inline def apply[T](inline question: String, inline printer: Printers.Printer)(inline op: T)(using Context): T =
-    apply[T](question, printer, false)(op)
+    apply(question, printer, false)(op)
 
   inline def apply[T](inline question: String, inline show: Boolean)(inline op: T)(using Context): T =
-    apply[T](question, Printers.default, show)(op)
+    apply(question, Printers.default, show)(op)
 
   inline def apply[T](inline question: String)(inline op: T)(using Context): T =
-    apply[T](question, false)(op)
+    apply(question, false)(op)
 
   private def showShowable(x: Any)(using Context) = x match
     case x: printing.Showable => x.show
-    case _ => String.valueOf(x)
+    case _                    => String.valueOf(x)
 
-  private val alwaysToString = (x: Any) => String.valueOf(x)
-
-  private def doTrace[T](question: => String,
-                         printer: Printers.Printer = Printers.default,
-                         showOp: T => String = alwaysToString)
-                        (op: => T)(using Context): T =
+  private def doTrace[T](question: => String, printer: Printers.Printer, showOp: T => String)(op: => T)(using Context): T =
     if ctx.mode.is(Mode.Printing) || !isForced && (printer eq Printers.noPrinter) then op
     else
       // Avoid evaluating question multiple time, since each evaluation
       // may cause some extra logging output.
-      val q = question
-      val leading = s"==> $q?"
-      val trailing = (res: T) => s"<== $q = ${showOp(res)}"
-      var finalized = false
-      var logctx = ctx
-      while logctx.reporter.isInstanceOf[StoreReporter] do logctx = logctx.outer
+      val q                   = question
+      val leading             = s"==> $q?"
+      def answer(res: String) = s"<== $q = $res"
+      def trailing(res: T)    = answer(showOp(res))
       def margin = ctx.base.indentTab * ctx.base.indent
       def doLog(s: String) = if isForced then println(s) else report.log(s)(using logctx)
-      def finalize(msg: String) =
-        if !finalized then
-          ctx.base.indent -= 1
-          doLog(s"$margin$msg")
-          finalized = true
+      var finalized = false
+      def finalize(msg: String) = if !finalized then
+        ctx.base.indent -= 1
+        doLog(s"$margin$msg")
+        finalized = true
       try
         doLog(s"$margin$leading")
         ctx.base.indent += 1
@@ -96,11 +82,6 @@ trait TraceSyntax:
         finalize(trailing(res))
         res
       catch
-        case ex: runtime.NonLocalReturnControl[T] =>
-          finalize(trailing(ex.value))
-          throw ex
-        case ex: Throwable =>
-          val msg = s"<== $q = <missing> (with exception $ex)"
-          finalize(msg)
-          throw ex
+        case ex: runtime.NonLocalReturnControl[T] => finalize(trailing(ex.value)); throw ex
+        case ex: Throwable                        => finalize(answer(s"<missing> (with exception $ex)")); throw ex
 end TraceSyntax

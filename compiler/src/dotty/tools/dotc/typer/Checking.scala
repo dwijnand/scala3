@@ -798,15 +798,14 @@ trait Checking {
 
     def fail(pat: Tree, pt: Type): Boolean = {
       var reportedPt = pt.dropAnnot(defn.UncheckedAnnot)
-      if (!pat.tpe.isSingleton) reportedPt = reportedPt.widen
-      val problem = if (pat.tpe <:< reportedPt) "is more specialized than" else "does not match"
-      val fix = if (isPatDef) "adding `: @unchecked` after the expression" else "writing `case ` before the full pattern"
-      val pos = if (isPatDef) sel.srcPos else pat.srcPos
+      if !pat.tpe.isSingleton then reportedPt = reportedPt.widen
+      val problem = if pat.tpe <:< reportedPt then "is more specialized than" else "does not match"
+      val fix = if isPatDef then "adding `: @unchecked` after the expression" else "writing `case ` before the full pattern"
       report.warning(
         ex"""pattern's type ${pat.tpe} $problem the right hand side expression's type $reportedPt
             |
             |If the narrowing is intentional, this can be communicated by $fix.${err.rewriteNotice}""",
-          pos)
+        if isPatDef then sel.srcPos else pat.srcPos)
       false
     }
 
@@ -817,22 +816,14 @@ trait Checking {
       pt.hasAnnotation(defn.UncheckedAnnot) || {
         patmatch.println(i"check irrefutable $pat: ${pat.tpe} against $pt")
         pat match {
-          case Bind(_, pat1) =>
-            recur(pat1, pt)
-          case UnApply(fn, _, pats) =>
-            check(pat, pt) &&
-            (isIrrefutable(fn, pats.length) || fail(pat, pt)) && {
-              val argPts = unapplyArgs(fn.tpe.widen.finalResultType, fn, pats, pat.srcPos)
-              pats.corresponds(argPts)(recur)
-            }
-          case Alternative(pats) =>
-            pats.forall(recur(_, pt))
-          case Typed(arg, tpt) =>
-            check(pat, pt) && recur(arg, pt)
-          case Ident(nme.WILDCARD) =>
-            true
-          case _ =>
-            check(pat, pt)
+          case Bind(_, pat1)        => recur(pat1, pt)
+          case UnApply(fn, _, pats) => check(pat, pt) &&
+            (isIrrefutable(fn, pats.length) || fail(pat, pt)) &&
+            pats.corresponds(unapplyArgs(fn.tpe.widen.finalResultType, fn, pats, pat.srcPos))(recur)
+          case Alternative(pats)   => pats.forall(recur(_, pt))
+          case Typed(arg, tpt)     => check(pat, pt) && recur(arg, pt)
+          case Ident(nme.WILDCARD) => true
+          case _                   => check(pat, pt)
         }
       }
 
