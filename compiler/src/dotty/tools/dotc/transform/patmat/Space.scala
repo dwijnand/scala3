@@ -536,10 +536,17 @@ class SpaceEngine(using Context) extends SpaceLogic {
   override def isSubspace(a: Space, b: Space)(using Context): Boolean =
     isSubspaceCache.getOrElseUpdate((a, b, ctx), super.isSubspace(a, b))
 
+  private var isSubTypeCache = scala.collection.mutable.Map.empty[(Type, Type), Boolean]
+
   /** Is `tp1` a subtype of `tp2`?  */
-  def isSubType(tp1: Type, tp2: Type): Boolean = trace(i"$tp1 <:< $tp2", debug, show = true) {
-    if tp1 == constantNullType && !ctx.explicitNulls then tp2 == constantNullType
-    else adaptType(tp1, tp2) <:< tp2
+  def isSubType(tp1: Type, tp2: Type): Boolean = isSubTypeCache.getOrElseUpdate((tp1, tp2), {
+    new Exception("Stack trace").getStackTrace.take(15).foreach(x => debug.println(x.toString))
+    debug.println(TypeComparer.explained(_.isSubType(tp1, tp2)))
+    isSubTypeImpl(tp1, tp2)
+  })
+
+  private def isSubTypeImpl(tp1: Type, tp2: Type): Boolean = trace(i"$tp1 <:< $tp2", debug, show = true) {
+    (ctx.explicitNulls || tp1 != constantNullType || tp2 == constantNullType) && adaptType(tp1) <:< tp2
   }
 
   def isSameUnapply(tp1: TermRef, tp2: TermRef): Boolean =
@@ -678,8 +685,10 @@ class SpaceEngine(using Context) extends SpaceLogic {
         parts.map(Typ(_, true))
     }
 
+  private var canDecomposeCache = scala.collection.mutable.Map.empty[Type, Boolean]
+
   /** Abstract sealed types, or-types, Boolean and Java enums can be decomposed */
-  def canDecompose(tp: Type): Boolean =
+  def canDecompose(tp: Type): Boolean = canDecomposeCache.getOrElseUpdate(tp, {
     val res = tp.dealias match
       case _: SingletonType => false
       case _: OrType => true
@@ -695,6 +704,7 @@ class SpaceEngine(using Context) extends SpaceLogic {
         || tp.isRef(defn.UnitClass)
     //debug.println(s"decomposable: ${tp.show} = $res")
     res
+  })
 
   /** Show friendly type name with current scope in mind
    *
