@@ -32,6 +32,7 @@ import config.{Feature, Config}
 
 import collection.mutable
 import config.Printers.{overload, typr, unapp}
+import config.Printers.{exhaustivity => debug}
 import TypeApplications._
 
 import Constants.{Constant, IntTag, LongTag}
@@ -50,7 +51,9 @@ object Applications {
     val ref = extractorMember(tp, name)
     if (ref.isOverloaded)
       errorType(i"Overloaded reference to $ref is not allowed in extractor", errorPos)
-    ref.info.widenExpr.annotatedToRepeated
+    val res = ref.info.widenExpr.annotatedToRepeated
+    debug.println(s"extractorMemberType: ${res.show} ${res.getClass}")
+    res
   }
 
   /** Does `tp` fit the "product match" conditions as an unapply result type

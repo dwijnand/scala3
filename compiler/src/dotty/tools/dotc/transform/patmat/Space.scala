@@ -309,11 +309,14 @@ class SpaceEngine(using Context) extends SpaceLogic {
   }
 
   /** Return the space that represents the pattern `pat` */
-  def project(pat: Tree): Space = pat match {
+  def project(pat: Tree): Space = trace(s"project(${pat.show} $pat)", debug, x => show(x.asInstanceOf[Space]))(pat match {
     case Literal(Constant(s: Symbol))    => Typ(s.termRef,       decomposed = false)
     case Literal(c)                      => Typ(ConstantType(c), decomposed = false)
     case pat: Ident if isBackquoted(pat) => Typ(pat.tpe, decomposed = false)
-    case Ident(_) | Select(_, _)         => Typ(erase(pat.tpe.stripAnnots.widenSkolem, isValue = true), decomposed = false)
+    case Ident(_) | Select(_, _)         =>
+      val er = erase(pat.tpe.stripAnnots.widenSkolem, isValue = true)
+      debug.println(s"project(Ident): ${er.show} $er")
+      Typ(er, decomposed = false)
     case Alternative(trees)              => Or(trees.map(project))
     case Bind(_, pat)                    => project(pat)
     case SeqLiteral(pats, _)             => projectSeq(pats)
@@ -328,7 +331,12 @@ class SpaceEngine(using Context) extends SpaceLogic {
             else pats.take(arity - 1).map(project) :+ projectSeq(pats.drop(arity - 1))
           Prod(erase(pat.tpe.stripAnnots, isValue = false), funRef, params1)
       else
-        Prod(erase(pat.tpe.stripAnnots, isValue = false), funRef, pats.map(project))
+        val patsProject = pats.map { pat =>
+          val space = project(pat)
+          debug.println(s"pat=${pat.show} $pat => space=${show(space)}")
+          space
+        }
+        Prod(erase(pat.tpe.stripAnnots, isValue = false), funRef, patsProject)
 
     case Typed(pat @ UnApply(_, _, _), _) => project(pat)
     case Typed(_, tpt)                    => Typ(erase(tpt.tpe.stripAnnots, isValue = true), decomposed = false)
@@ -336,7 +344,7 @@ class SpaceEngine(using Context) extends SpaceLogic {
     case EmptyTree                        => Typ(WildcardType, decomposed = false) // default rethrow clause of try/catch, check tests/patmat/try2.scala
     case Block(Nil, expr)                 => project(expr)
     case _                                => Typ(pat.tpe.narrow, decomposed = false) // Pattern is an arbitrary expression; assume a skolem (i.e. an unknown value) of the pattern type
-  }
+  })
 
   private def project(tp: Type): Space = tp match {
     case OrType(tp1, tp2) => Or(List(project(tp1), project(tp2)))
@@ -349,8 +357,8 @@ class SpaceEngine(using Context) extends SpaceLogic {
     var arity    = productArity(resultTp, pos)
     if !elemTp.exists && arity <= 0 then
       resultTp = resTp.select(nme.get).finalResultType
-      elemTp = unapplySeqTypeElemTp(resultTp.widen)
-      arity = productSelectorTypes(resultTp, pos).size
+      elemTp   = unapplySeqTypeElemTp(resultTp.widen)
+      arity    = productSelectorTypes(resultTp, pos).size
     (arity, elemTp, resultTp)
   }
 
@@ -476,28 +484,27 @@ class SpaceEngine(using Context) extends SpaceLogic {
 
   def isSameUnapply(tp1: TermRef, tp2: TermRef): Boolean =
     // always assume two TypeTest[S, T].unapply are the same if they are equal in types
-    (tp1.prefix.isStable && tp2.prefix.isStable || tp1.symbol == defn.TypeTest_unapply)
-    && tp1 =:= tp2
+    (tp1.prefix.isStable && tp2.prefix.isStable || tp1.symbol == defn.TypeTest_unapply) && tp1 =:= tp2
 
-  /** Parameter types of the case class type `tp`. Adapted from `unapplyPlan` in patternMatcher  */
+  /** Parameter types of the case class type `tp`. Adapted from `unapplyPlan` in patternMatcher */
   def signature(unapp: TermRef, scrutineeTp: Type, argLen: Int): List[Type] = {
     val unappSym = unapp.symbol
+    val unappWid = unapp.widen
 
     // println("scrutineeTp = " + scrutineeTp.show)
 
-    val mt: MethodType = unapp.widen match {
+    val mt: MethodType = unappWid match {
       case mt: MethodType => mt
-      case pt: PolyType   =>
-        inContext(ctx.fresh.setExploreTyperState()) {
-          val tvars = pt.paramInfos.map(newTypeVar(_))
-          val mt = pt.instantiate(tvars).asInstanceOf[MethodType]
-          scrutineeTp <:< mt.paramInfos(0)
-          // force type inference to infer a narrower type: could be singleton
-          // see tests/patmat/i4227.scala
-          mt.paramInfos(0) <:< scrutineeTp
-          isFullyDefined(mt, ForceDegree.all)
-          mt
-        }
+      case pt: PolyType   => inContext(ctx.fresh.setExploreTyperState()) {
+        val tvars = pt.paramInfos.map(newTypeVar(_))
+        val mt    = pt.instantiate(tvars).asInstanceOf[MethodType]
+        scrutineeTp <:< mt.paramInfos(0)
+        // force type inference to infer a narrower type: could be singleton
+        // see tests/patmat/i4227.scala
+        mt.paramInfos(0) <:< scrutineeTp
+        isFullyDefined(mt, ForceDegree.all)
+        mt
+      }
     }
 
     // Case unapply:
@@ -510,33 +517,27 @@ class SpaceEngine(using Context) extends SpaceLogic {
     // Case unapplySeq:
     // 1. return the type `List[T]` where `T` is the element type of the unapplySeq return type `Seq[T]`
 
-    val resTp = mt.instantiate(scrutineeTp :: Nil).finalResultType
+    val resTp = mt.finalResultType
+    //val insTp = mt.instantiate(List(scrutineeTp))
+    //val resTp = insTp.finalResultType
+    //debug.println(s"signature(${unapp.show}, ${scrutineeTp.show}) unappWid=${unappWid.show}) mt=${mt.show} resTp2=${resTp2.show} insTp=${insTp.show} resTp=${resTp.show}")
 
     val sig =
-      if (resTp.isRef(defn.BooleanClass))
-        List()
-      else {
-        val isUnapplySeq = unappSym.name == nme.unapplySeq
-
-        if (isUnapplySeq) {
-          val (arity, elemTp, resultTp) = unapplySeqInfo(resTp, unappSym.srcPos)
-          if (elemTp.exists) scalaListType.appliedTo(elemTp) :: Nil
-          else {
-            val sels = productSeqSelectors(resultTp, arity, unappSym.srcPos)
-            sels.init :+ scalaListType.appliedTo(sels.last)
-          }
-        }
-        else {
-          val arity = productArity(resTp, unappSym.srcPos)
-          if (arity > 0)
-            productSelectorTypes(resTp, unappSym.srcPos)
-          else {
-            val getTp = resTp.select(nme.get).finalResultType.widenTermRefExpr
-            if (argLen == 1) getTp :: Nil
-            else productSelectorTypes(getTp, unappSym.srcPos)
-          }
-        }
-      }
+      if resTp.isRef(defn.BooleanClass) then Nil
+      else if unappSym.name == nme.unapplySeq then
+        val (arity, elemTp, resultTp) = unapplySeqInfo(resTp, unappSym.srcPos)
+        if elemTp.exists then List(scalaListType.appliedTo(elemTp))
+        else
+          val sels = productSeqSelectors(resultTp, arity, unappSym.srcPos)
+          sels.init :+ scalaListType.appliedTo(sels.last)
+      else if productArity(resTp, unappSym.srcPos) > 0 then
+        val tps = productSelectorTypes(resTp, unappSym.srcPos)
+        tps
+      else
+        val getTp = resTp.select(nme.get).finalResultType.widenTermRefExpr
+        val tps = if argLen == 1 then List(getTp) else productSelectorTypes(getTp, unappSym.srcPos)
+        debug.println(s"productSelectorTypes = ${tps.map(_.show).mkString("[", ", ", "]")}")
+        tps
 
     debug.println(s"signature of ${unappSym.showFullName} ----> ${sig.map(_.show).mkString("[", ", ", "]")}")
 
@@ -796,13 +797,10 @@ class SpaceEngine(using Context) extends SpaceLogic {
 
   def checkExhaustivity(_match: Match): Unit = {
     val Match(sel, cases) = _match
-    debug.println(i"checking exhaustivity of ${_match}")
-
     if (!exhaustivityCheckable(sel)) return
 
-    debug.println(s"exhaustivity: checking ${_match.show}")
-
     val selTyp = toUnderlying(sel.tpe).dealias
+    debug.println(s"exhaustivity: checking ${_match.show}")
     debug.println(s"exhaustivity: selTyp = ${selTyp.show}")
 
     val     selSpace = project(selTyp)
@@ -842,19 +840,17 @@ class SpaceEngine(using Context) extends SpaceLogic {
     // Since we assume that repeated calls to the same unapply method overlap
     // and implicit parameters cannot normally differ between two patterns in one `match`,
     // the easiest solution is just to ignore Expr[T] and Type[T].
-    !sel.tpe.hasAnnotation(defn.UncheckedAnnot)
-    && !sel.tpe.widen.isRef(defn.QuotedExprClass)
-    && !sel.tpe.widen.isRef(defn.QuotedTypeClass)
+    !sel.tpe.hasAnnotation(defn.UncheckedAnnot) &&
+    !sel.tpe.widen.isRef(defn.QuotedExprClass) &&
+    !sel.tpe.widen.isRef(defn.QuotedTypeClass)
 
   def checkRedundancy(_match: Match): Unit = {
     val Match(sel, _) = _match
     val cases = _match.cases.toIndexedSeq
-    debug.println(i"checking redundancy in $_match")
-
     if (!redundancyCheckable(sel)) return
 
     val selTyp = toUnderlying(sel.tpe).dealias
-    debug.println(i"selTyp = $selTyp")
+    debug.println(i"checking redundancy in $_match")
 
     val isNullable = selTyp.classSymbol.isNullableClass
     val targetSpace = if isNullable
