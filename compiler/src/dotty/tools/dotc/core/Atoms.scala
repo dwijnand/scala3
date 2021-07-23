@@ -17,20 +17,17 @@ enum Atoms:
   case Unknown
 
   def & (that: Atoms): Atoms = this match
-    case Range(lo1, hi1) =>
-      that match
-        case Range(lo2, hi2) => Range(lo1 & lo2, hi1 & hi2)
-        case Unknown => Range(Set.empty, hi1)
-    case Unknown =>
-      that match
-        case Range(lo2, hi2) => Range(Set.empty, hi2)
-        case Unknown => Unknown
+    case Range(lo1, hi1) => that match
+      case Range(lo2, hi2) => Range(lo1 & lo2, hi1 & hi2)
+      case _               => Range(Set.empty, hi1)
+    case _               => that match
+      case Range(lo2, hi2) => Range(Set.empty, hi2)
+      case _               => Unknown
 
   def | (that: Atoms): Atoms = this match
-    case Range(lo1, hi1) =>
-      that match
-        case Range(lo2, hi2) => Range(lo1 | lo2, hi1 | hi2)
-        case Unknown => Unknown
-    case Unknown => Unknown
+    case Range(lo1, hi1) => that match
+      case Range(lo2, hi2) => Range(lo1 | lo2, hi1 | hi2)
+      case _               => Unknown
+    case _               => Unknown
 
 end Atoms

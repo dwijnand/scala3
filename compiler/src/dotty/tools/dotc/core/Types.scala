@@ -144,10 +144,10 @@ object Types {
     end testProvisional
 
     /** Is this type different from NoType? */
-    final def exists: Boolean = this.ne(NoType)
+    final def exists: Boolean = this ne NoType
 
     /** This type, if it exists, otherwise `that` type */
-    inline def orElse(inline that: Type): Type = if (exists) this else that
+    inline def orElse(inline that: Type): Type = if exists then this else that
 
     /** Is this type a value type? */
     final def isValueType: Boolean = this.isInstanceOf[ValueType]
@@ -710,8 +710,7 @@ object Types {
         case tp: SuperType =>
           goSuper(tp)
         case tp: MatchType =>
-          val normed = tp.tryNormalize
-          go(if (normed.exists) normed else tp.underlying)
+          go(tp.tryNormalize.orElse(tp.underlying))
         case tp: TypeProxy =>
           go(tp.underlying)
         case tp: ClassInfo =>
@@ -1023,12 +1022,10 @@ object Types {
     final def memberInfo(sym: Symbol)(using Context): Type =
       sym.info.asSeenFrom(this, sym.owner)
 
-    /** This type seen as if it were the type of a member of prefix type `pre`
-     *  declared in class `cls`.
-     */
+    /** This type seen as if it were the type of a member of prefix type `pre` declared in class `cls`. */
     final def asSeenFrom(pre: Type, cls: Symbol)(using Context): Type = {
       record("asSeenFrom")
-      if (!cls.membersNeedAsSeenFrom(pre)) this
+      if !cls.membersNeedAsSeenFrom(pre) then this
       else TypeOps.asSeenFrom(this, pre, cls)
     }
 
@@ -1177,32 +1174,28 @@ object Types {
 // ----- Unwrapping types -----------------------------------------------
 
     /** Map a TypeVar to either its instance if it is instantiated, or its origin,
-     *  if not, until the result is no longer a TypeVar. Identity on all other types.
-     */
+     *  if not, until the result is no longer a TypeVar. Identity on all other types. */
     def stripTypeVar(using Context): Type = this
 
-    /** Remove all AnnotatedTypes wrapping this type.
-     */
+    /** Remove all AnnotatedTypes wrapping this type. */
     def stripAnnots(using Context): Type = this
 
     /** Strip TypeVars and Annotation wrappers */
     def stripped(using Context): Type = this
 
-    def rewrapAnnots(tp: Type)(using Context): Type = tp.stripTypeVar match {
-      case AnnotatedType(tp1, annot) => AnnotatedType(rewrapAnnots(tp1), annot)
-      case _ => this
-    }
+    def rewrapAnnots(tp: Type)(using Context): Type = tp.stripTypeVar match
+      case tp @ AnnotatedType(tp1, annot) => tp.derivedAnnotatedType(rewrapAnnots(tp1), annot)
+      case _                              => this
 
     /** Strip PolyType prefixes */
-    def stripPoly(using Context): Type = this match {
+    def stripPoly(using Context): Type = this match
       case tp: PolyType => tp.resType.stripPoly
-      case _ => this
-    }
+      case _            => this
 
     /** Strip LazyRef wrappers */
     def stripLazyRef(using Context): Type = this match
       case lzy: LazyRef => lzy.ref.stripLazyRef
-      case _ => this
+      case _            => this
 
     /** Widen from singleton type to its underlying non-singleton
      *  base type by applying one or more `underlying` dereferences,
@@ -1214,24 +1207,23 @@ object Types {
      *  <o.x.type>.widen = o.C
      */
     final def widen(using Context): Type = this match
-      case _: TypeRef | _: MethodOrPoly => this // fast path for most frequent cases
-      case tp: TermRef => // fast path for next most frequent case
-        if tp.isOverloaded then tp else tp.underlying.widen
-      case tp: SingletonType => tp.underlying.widen
-      case tp: ExprType => tp.resultType.widen
-      case tp =>
+      case _: TypeRef        => this // fast path for most frequent cases
+      case _: MethodOrPoly   => this // fast path for most frequent cases
+      case tp: SingletonType => if tp.isOverloaded then this else tp.underlying.widen // fast path for next most frequent case
+      case tp: ExprType      => widenExpr.widen
+      case tp                =>
         val tp1 = tp.stripped
         if tp1 eq tp then tp
         else
           val tp2 = tp1.widen
-          if tp2 ne tp1 then tp2 else tp
+          if tp2 eq tp1 then tp else tp2
 
     /** Widen from singleton type to its underlying non-singleton
      *  base type by applying one or more `underlying` dereferences.
      */
     final def widenSingleton(using Context): Type = stripped match {
       case tp: SingletonType if !tp.isOverloaded => tp.underlying.widenSingleton
-      case _ => this
+      case _                                     => this
     }
 
     /** Widen from TermRef to its underlying non-termref
@@ -1239,7 +1231,7 @@ object Types {
      */
     final def widenTermRefExpr(using Context): Type = stripTypeVar match {
       case tp: TermRef if !tp.isOverloaded => tp.underlying.widenExpr.widenTermRefExpr
-      case _ => this
+      case _                               => this
     }
 
     /** Widen from ExprType type to its result type.
@@ -1247,21 +1239,19 @@ object Types {
      */
     final def widenExpr: Type = this match {
       case tp: ExprType => tp.resType
-      case _ => this
+      case _            => this
     }
 
     /** Widen type if it is unstable (i.e. an ExprType, or TermRef to unstable symbol */
-    final def widenIfUnstable(using Context): Type = stripTypeVar match {
-      case tp: ExprType => tp.resultType.widenIfUnstable
+    final def widenIfUnstable(using Context): Type = stripTypeVar match
+      case tp: ExprType                                                 => tp.resType.widenIfUnstable
       case tp: TermRef if tp.symbol.exists && !tp.symbol.isStableMember => tp.underlying.widenIfUnstable
-      case _ => this
-    }
+      case _                                                            => this
 
     /** If this is a skolem, its underlying type, otherwise the type itself */
-    final def widenSkolem(using Context): Type = this match {
+    final def widenSkolem(using Context): Type = this match
       case tp: SkolemType => tp.underlying
-      case _ => this
-    }
+      case _              => this
 
     /** Widen this type and if the result contains embedded soft union types, replace
      *  them by their joins.
@@ -1284,46 +1274,31 @@ object Types {
     def widenUnion(using Context): Type = widen match
       case tp @ OrNull(tp1): OrType =>
         // Don't widen `T|Null`, since otherwise we wouldn't be able to infer nullable unions.
-        val tp1Widen = tp1.widenUnionWithoutNull
-        if (tp1Widen.isRef(defn.AnyClass)) tp1Widen
-        else tp.derivedOrType(tp1Widen, defn.NullType)
-      case tp =>
-        tp.widenUnionWithoutNull
+        val tp1w = tp1.widenUnionWithoutNull
+        if tp1w.isRef(defn.AnyClass) then tp1w
+        else tp.derivedOrType(tp1w, defn.NullType)
+      case tp => tp.widenUnionWithoutNull
 
     /** Overridden in OrType */
     def widenUnionWithoutNull(using Context): Type = widen match
-      case tp: AndType =>
-        tp.derivedAndType(tp.tp1.widenUnionWithoutNull, tp.tp2.widenUnionWithoutNull)
-      case tp: RefinedType =>
-        tp.derivedRefinedType(tp.parent.widenUnion, tp.refinedName, tp.refinedInfo)
-      case tp: RecType =>
-        tp.rebind(tp.parent.widenUnion)
-      case tp: HKTypeLambda =>
-        tp.derivedLambdaType(resType = tp.resType.widenUnion)
-      case tp =>
-        tp
+      case tp: AndType      => tp.derivedAndType(tp.tp1.widenUnionWithoutNull, tp.tp2.widenUnionWithoutNull)
+      case tp: RefinedType  => tp.derivedRefinedType(tp.parent.widenUnion, tp.refinedName, tp.refinedInfo)
+      case tp: RecType      => tp.rebind(tp.parent.widenUnion)
+      case tp: HKTypeLambda => tp.derivedLambdaType(resType = tp.resType.widenUnion)
+      case tp               => tp
 
     /** Widen all top-level singletons reachable by dealiasing
      *  and going to the operands of & and |.
-     *  Overridden and cached in OrType.
-     */
+     *  Overridden and cached in OrType. */
     def widenSingletons(using Context): Type = dealias match {
-      case tp: SingletonType =>
-        tp.widen
-      case tp: OrType =>
-        val tp1w = tp.widenSingletons
-        if (tp1w eq tp) this else tp1w
-      case tp: AndType =>
-        val tp1w = tp.tp1.widenSingletons
-        val tp2w = tp.tp2.widenSingletons
-        if ((tp.tp1 eq tp1w) && (tp.tp2 eq tp2w)) this else tp1w & tp2w
-      case _ =>
-        this
+      case tp: SingletonType => tp.widen
+      case tp: OrType        => val x = tp.widenSingletons; if x eq tp then this else x
+      case AndType(tp1, tp2) => val a = tp1.widenSingletons; val b = tp2.widenSingletons; if ((tp1 eq a) && (tp2 eq b)) this else a & b
+      case _                 => this
     }
 
     /** The singleton types that must or may be in this type. @see Atoms.
-     *  Overridden and cached in OrType.
-     */
+     *  Overridden and cached in OrType. */
     def atoms(using Context): Atoms =
       def normalize(tp: Type): Type = tp match
         case tp: SingletonType =>
@@ -1364,26 +1339,12 @@ object Types {
         case _ => Atoms.Unknown
 
     private def dealias1(keep: AnnotatedType => Context ?=> Boolean, keepOpaques: Boolean)(using Context): Type = this match {
-      case tp: TypeRef =>
-        if (tp.symbol.isClass) tp
-        else tp.info match {
-          case TypeAlias(alias) if !(keepOpaques && tp.symbol.is(Opaque)) =>
-            alias.dealias1(keep, keepOpaques)
-          case _ => tp
-        }
-      case app @ AppliedType(tycon, _) =>
-        val tycon1 = tycon.dealias1(keep, keepOpaques)
-        if (tycon1 ne tycon) app.superType.dealias1(keep, keepOpaques)
-        else this
-      case tp: TypeVar =>
-        val tp1 = tp.instanceOpt
-        if (tp1.exists) tp1.dealias1(keep, keepOpaques) else tp
-      case tp: AnnotatedType =>
-        val tp1 = tp.parent.dealias1(keep, keepOpaques)
-        if keep(tp) then tp.derivedAnnotatedType(tp1, tp.annot) else tp1
-      case tp: LazyRef =>
-        tp.ref.dealias1(keep, keepOpaques)
-      case _ => this
+      case tp: TypeRef       => tp.info match { case TypeAlias(x) if !(keepOpaques && tp.symbol.is(Opaque)) => x.dealias1(keep, keepOpaques) case _ => tp }
+      case tp: AppliedType   => if tp.tycon.dealias1(keep) eq tp.tycon then this else tp.superType.dealias1(keep, keepOpaques)
+      case tp: TypeVar       => val tp1 = tp.instanceOpt; if tp1.exists then tp1.dealias1(keep, keepOpaques) else tp
+      case tp: AnnotatedType => val tp1 = tp.parent.dealias1(keep, keepOpaques); if keep(tp) then tp.derivedAnnotatedType(tp1, tp.annot) else tp1
+      case tp: LazyRef       => tp.ref.dealias1(keep, keepOpaques)
+      case _                 => this
     }
 
     /** Follow aliases and dereferences LazyRefs, annotated types and instantiated
@@ -1392,13 +1353,10 @@ object Types {
      */
     final def dealias(using Context): Type = dealias1(keepNever, keepOpaques = false)
 
-    /** Follow aliases and dereferences LazyRefs and instantiated TypeVars until type
-     *  is no longer alias type, LazyRef, or instantiated type variable.
-     *  Goes through annotated types and rewraps annotations on the result.
-     */
+    /** Like `dealias` but keeps annotated types, going through them and rewrapping annotations on the result. */
     final def dealiasKeepAnnots(using Context): Type = dealias1(keepAlways, keepOpaques = false)
 
-    /** Like `dealiasKeepAnnots`, but keeps only refining annotations */
+    /** Like `dealiasKeepAnnots`, but keeps only refining annotations. */
     final def dealiasKeepRefiningAnnots(using Context): Type = dealias1(keepIfRefining, keepOpaques = false)
 
     /** Follow non-opaque aliases and dereferences LazyRefs, annotated types and instantiated
@@ -1421,10 +1379,7 @@ object Types {
     /** The result of normalization using `tryNormalize`, or the type itself if
      *  tryNormlize yields NoType
      */
-    final def normalized(using Context): Type = {
-      val normed = tryNormalize
-      if (normed.exists) normed else this
-    }
+    final def normalized(using Context): Type = tryNormalize.orElse(this)
 
     /** If this type can be normalized at the top-level by rewriting match types
      *  of S[n] types, the result after applying all toplevel normalizations,
@@ -1433,8 +1388,8 @@ object Types {
     def tryNormalize(using Context): Type = NoType
 
     private def widenDealias1(keep: AnnotatedType => Context ?=> Boolean)(using Context): Type = {
-      val res = this.widen.dealias1(keep, keepOpaques = false)
-      if (res eq this) res else res.widenDealias1(keep)
+      val res = widen.dealias1(keep, keepOpaques = false)
+      if res eq this then res else res.widenDealias1(keep)
     }
 
     /** Perform successive widenings and dealiasings until none can be applied anymore */
@@ -3112,10 +3067,23 @@ object Types {
     def tp2: Type
 
     def derivedAndOrType(tp1: Type, tp2: Type)(using Context) =
-      if ((tp1 eq this.tp1) && (tp2 eq this.tp2)) this
+      if (tp1 eq this.tp1) && (tp2 eq this.tp2) then this
       else this match
-        case tp: OrType => OrType.make(tp1, tp2, tp.isSoft)
+        case tp:  OrType =>  OrType.make(tp1, tp2, tp.isSoft)
         case tp: AndType => AndType.make(tp1, tp2, checkValid = true)
+  }
+
+  object AndOrType {
+    final class AndOrTypeExtractor(val tp: AndOrType) extends AnyVal with Product {
+      def isEmpty                = false
+      def get                    = this
+      def _1                     = tp.tp1
+      def _2                     = tp.tp2
+      def productArity           = 2
+      def productElement(n: Int) = if n == 0 then _1 else if n == 1 then _2 else throw IndexOutOfBoundsException(s"$n")
+      def canEqual(that: Any)    = that.isInstanceOf[AndOrTypeExtractor]
+    }
+    def unapply(tp: AndOrType): AndOrTypeExtractor = new AndOrTypeExtractor(tp)
   }
 
   abstract case class AndType(tp1: Type, tp2: Type) extends AndOrType {
@@ -3265,12 +3233,11 @@ object Types {
 
     override def widenUnionWithoutNull(using Context): Type =
       if myUnionPeriod != ctx.period then
-        myUnion =
-          if isSoft then
-            TypeComparer.lub(tp1.widenUnionWithoutNull, tp2.widenUnionWithoutNull, canConstrain = true) match
-              case union: OrType => union.join
-              case res => res
-          else derivedOrType(tp1.widenUnionWithoutNull, tp2.widenUnionWithoutNull)
+        myUnion = if isSoft then
+          TypeComparer.lub(tp1.widenUnionWithoutNull, tp2.widenUnionWithoutNull, canConstrain = true) match
+            case union: OrType => union.join
+            case res           => res
+        else derivedOrType(tp1.widenUnionWithoutNull, tp2.widenUnionWithoutNull)
         if !isProvisional then myUnionPeriod = ctx.period
       myUnion
 
@@ -3281,9 +3248,9 @@ object Types {
     private def ensureAtomsComputed()(using Context): Unit =
       if atomsRunId != ctx.runId then
         myAtoms =
-          if tp1.hasClassSymbol(defn.NothingClass) then tp2.atoms
+          if      tp1.hasClassSymbol(defn.NothingClass) then tp2.atoms
           else if tp2.hasClassSymbol(defn.NothingClass) then tp1.atoms
-          else tp1.atoms | tp2.atoms
+          else    tp1.atoms | tp2.atoms
         val tp1w = tp1.widenSingletons
         val tp2w = tp2.widenSingletons
         myWidened = if ((tp1 eq tp1w) && (tp2 eq tp2w)) this else tp1w | tp2w
@@ -4126,7 +4093,7 @@ object Types {
   extends CachedProxyType with ValueType {
 
     private var validSuper: Period = Nowhere
-    private var cachedSuper: Type = _
+    private var cachedSuper: Type  = _
 
     // Boolean caches: 0 = uninitialized, -1 = false, 1 = true
     private var myStableHash: Byte = 0
@@ -4142,12 +4109,12 @@ object Types {
       if ctx.period != validSuper then
         validSuper = if (tycon.isProvisional) Nowhere else ctx.period
         cachedSuper = tycon match
-          case tycon: HKTypeLambda => defn.AnyType
+          case tycon: HKTypeLambda                    => defn.AnyType
           case tycon: TypeRef if tycon.symbol.isClass => tycon
-          case tycon: TypeProxy =>
+          case tycon: TypeProxy                       =>
             if isMatchAlias then validSuper = Nowhere
             tycon.superType.applyIfParameterized(args).normalized
-          case _ => defn.AnyType
+          case _                                      => defn.AnyType
       cachedSuper
 
     override def translucentSuperType(using Context): Type = tycon match {
@@ -4649,7 +4616,7 @@ object Types {
    */
   class QualSkolemType(info: Type) extends SkolemType(info) {
     override def derivedSkolemType(info: Type)(using Context): SkolemType =
-      if (info eq this.info) this else QualSkolemType(info)
+      if info eq this.info then this else QualSkolemType(info)
   }
   object QualSkolemType {
     def apply(info: Type): QualSkolemType = new QualSkolemType(info)
@@ -5231,14 +5198,13 @@ object Types {
 
     override def stripped(using Context): Type = parent.stripped
 
-    private var isRefiningKnown = false
+    private var isRefiningKnown          = false
     private var isRefiningCache: Boolean = _
 
     def isRefining(using Context): Boolean = {
-      if (!isRefiningKnown) {
+      if !isRefiningKnown then
         isRefiningCache = annot.symbol.derivesFrom(defn.RefiningAnnotationClass)
         isRefiningKnown = true
-      }
       isRefiningCache
     }
 
@@ -6320,8 +6286,8 @@ object Types {
       }
   }
 
-  private val keepAlways: AnnotatedType => Context ?=> Boolean = _ => true
-  private val keepNever: AnnotatedType => Context ?=> Boolean = _ => false
+  private val keepAlways:     AnnotatedType => Context ?=> Boolean = _ => true
+  private val keepNever:      AnnotatedType => Context ?=> Boolean = _ => false
   private val keepIfRefining: AnnotatedType => Context ?=> Boolean = _.isRefining
 
   val isBounds: Type => Boolean = _.isInstanceOf[TypeBounds]

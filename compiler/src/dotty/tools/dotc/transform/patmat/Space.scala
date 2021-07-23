@@ -315,8 +315,9 @@ class SpaceEngine(using Context) extends SpaceLogic {
     case pat: Ident if isBackquoted(pat) => Typ(pat.tpe, decomposed = false)
     case Ident(_) | Select(_, _)         =>
       val er = erase(pat.tpe.stripAnnots.widenSkolem, isValue = true)
-      debug.println(s"project(Ident): ${er.show} $er")
-      Typ(er, decomposed = false)
+      val tp = er.widenSkolem
+        debug.println(s"project(Ident): ${er.show} -> ${tp.show}")
+      Typ(tp, decomposed = false)
     case Alternative(trees)              => Or(trees.map(project))
     case Bind(_, pat)                    => project(pat)
     case SeqLiteral(pats, _)             => projectSeq(pats)
@@ -517,10 +518,17 @@ class SpaceEngine(using Context) extends SpaceLogic {
     // Case unapplySeq:
     // 1. return the type `List[T]` where `T` is the element type of the unapplySeq return type `Seq[T]`
 
-    val resTp = mt.finalResultType
-    //val insTp = mt.instantiate(List(scrutineeTp))
-    //val resTp = insTp.finalResultType
-    //debug.println(s"signature(${unapp.show}, ${scrutineeTp.show}) unappWid=${unappWid.show}) mt=${mt.show} resTp2=${resTp2.show} insTp=${insTp.show} resTp=${resTp.show}")
+    val resTp2 = mt.finalResultType
+    val insTp = mt.instantiate(List(scrutineeTp))
+    val resTp = insTp.finalResultType
+    debug.println(s"signature: unapp=${unapp.show}")
+    debug.println(s"signature: scrutineeTp=${scrutineeTp.show}")
+    debug.println(s"signature: unappSym=${unappSym.show}")
+    debug.println(s"signature: unappWid=${unappWid.show}")
+    debug.println(s"signature: mt=${mt.show}")
+    debug.println(s"signature: resTp2=${resTp2.show} ${resTp2}")
+    debug.println(s"signature: insTp=${insTp.show}")
+    debug.println(s"signature: resTp=${resTp.show}")
 
     val sig =
       if resTp.isRef(defn.BooleanClass) then Nil
@@ -799,9 +807,11 @@ class SpaceEngine(using Context) extends SpaceLogic {
     val Match(sel, cases) = _match
     if (!exhaustivityCheckable(sel)) return
 
-    val selTyp = toUnderlying(sel.tpe).dealias
+    val selTyp0 = sel.tpe
+    val selTyp1 = toUnderlying(selTyp0)
+    val selTyp  = selTyp1.dealias
     debug.println(s"exhaustivity: checking ${_match.show}")
-    debug.println(s"exhaustivity: selTyp = ${selTyp.show}")
+    debug.println(s"exhaustivity: selTyp: ${selTyp0.show} -> ${selTyp1.show} -> ${selTyp.show}")
 
     val     selSpace = project(selTyp)
     val patternSpace = Or(cases.foldLeft(List.empty[Space]) { case (spaces, CaseDef(pat, guard, _)) =>

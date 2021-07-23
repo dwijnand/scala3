@@ -86,7 +86,7 @@ object Applications {
     *  ```
     *  {
     *    def lengthCompare(len: Int): Int // or, def length: Int
-    *    def apply(i: Int): T = a(i)
+    *    def apply(i: Int): T
     *    def drop(n: Int): scala.collection.Seq[T]
     *    def toSeq: scala.collection.Seq[T]
     *  }
@@ -94,25 +94,21 @@ object Applications {
     *  returns `T`, otherwise NoType.
     */
   def unapplySeqTypeElemTp(getTp: Type)(using Context): Type = {
-    def lengthTp = ExprType(defn.IntType)
-    def lengthCompareTp = MethodType(List(defn.IntType), defn.IntType)
-    def applyTp(elemTp: Type) = MethodType(List(defn.IntType), elemTp)
-    def dropTp(elemTp: Type) = MethodType(List(defn.IntType), defn.CollectionSeqType.appliedTo(elemTp))
-    def toSeqTp(elemTp: Type) = ExprType(defn.CollectionSeqType.appliedTo(elemTp))
-
-    // the result type of `def apply(i: Int): T`
-    val elemTp = getTp.member(nme.apply).suchThat(_.info <:< applyTp(WildcardType)).info.resultType
+    // Get the result type of `def apply(i: Int): T`
+    def applyTp = MethodType(List(defn.IntType), WildcardType)
+    val elemTp  = getTp.member(nme.apply).suchThat(_.info <:< applyTp).info.resultType
 
     def hasMethod(name: Name, tp: Type) =
       getTp.member(name).suchThat(getTp.memberInfo(_) <:< tp).exists
 
     val isValid =
       elemTp.exists &&
-      (hasMethod(nme.lengthCompare, lengthCompareTp) || hasMethod(nme.length, lengthTp)) &&
-      hasMethod(nme.drop, dropTp(elemTp)) &&
-      hasMethod(nme.toSeq, toSeqTp(elemTp))
+      (hasMethod(nme.lengthCompare, MethodType(List(defn.IntType), defn.IntType)) ||
+       hasMethod(nme.length, ExprType(defn.IntType))) &&
+      hasMethod(nme.drop, MethodType(List(defn.IntType), defn.CollectionSeqType.appliedTo(elemTp))) &&
+      hasMethod(nme.toSeq, ExprType(defn.CollectionSeqType.appliedTo(elemTp)))
 
-    if (isValid) elemTp else NoType
+    if isValid then elemTp else NoType
   }
 
   def productSelectorTypes(tp: Type, errorPos: SrcPos)(using Context): List[Type] = {
@@ -123,18 +119,15 @@ object Applications {
   def tupleComponentTypes(tp: Type)(using Context): List[Type] =
     tp.widenExpr.dealias.normalized match
     case tp: AppliedType =>
-      if defn.isTupleClass(tp.tycon.typeSymbol) then
-        tp.args
+      if defn.isTupleClass(tp.tycon.typeSymbol) then tp.args
       else if tp.tycon.derivesFrom(defn.PairClass) then
-        val List(head, tail) = tp.args
-        head :: tupleComponentTypes(tail)
-      else
-        Nil
-    case _ =>
-      Nil
+        val List(_1, _2) = tp.args
+        _1 :: tupleComponentTypes(_2)
+      else Nil
+    case _ => Nil
 
   def productArity(tp: Type, errorPos: SrcPos = NoSourcePosition)(using Context): Int =
-    if (defn.isProductSubType(tp)) productSelectorTypes(tp, errorPos).size else -1
+    if defn.isProductSubType(tp) then productSelectorTypes(tp, errorPos).size else -1
 
   def productSelectors(tp: Type)(using Context): List[Symbol] = {
     val sels = for (n <- Iterator.from(0)) yield
@@ -154,15 +147,14 @@ object Applications {
     val selTps = productSelectorTypes(tp, pos)
     val arity = selTps.length
     val elemTp = unapplySeqTypeElemTp(selTps.last)
-    (0 until argsNum).map(i => if (i < arity - 1) selTps(i) else elemTp).toList
+    (0 until argsNum).map(i => if i < arity - 1 then selTps(i) else elemTp).toList
   }
 
   def unapplyArgs(unapplyResult: Type, unapplyFn: Tree, args: List[untpd.Tree], pos: SrcPos)(using Context): List[Type] = {
-    def getName(fn: Tree): Name =
-      fn match
-        case TypeApply(fn, _) => getName(fn)
-        case Apply(fn, _) => getName(fn)
-        case fn: RefTree => fn.name
+    def getName(fn: Tree): Name = fn match
+      case TypeApply(fn, _) => getName(fn)
+      case Apply(fn, _)     => getName(fn)
+      case fn: RefTree      => fn.name
     val unapplyName = getName(unapplyFn) // tolerate structural `unapply`, which does not have a symbol
 
     def getTp = extractorMemberType(unapplyResult, nme.get, pos)
@@ -174,34 +166,32 @@ object Applications {
 
     def unapplySeq(tp: Type)(fallback: => List[Type]): List[Type] = {
       val elemTp = unapplySeqTypeElemTp(tp)
-      if (elemTp.exists) args.map(Function.const(elemTp))
-      else if (isProductSeqMatch(tp, args.length, pos)) productSeqSelectors(tp, args.length, pos)
+      if elemTp.exists then args.map(Function.const(elemTp))
+      else if isProductSeqMatch(tp, args.length, pos) then productSeqSelectors(tp, args.length, pos)
       else fallback
     }
 
-    if (unapplyName == nme.unapplySeq)
+    if unapplyName == nme.unapplySeq then
       unapplySeq(unapplyResult) {
-        if (isGetMatch(unapplyResult, pos)) unapplySeq(getTp)(fail)
-        else fail
+        if isGetMatch(unapplyResult, pos) then unapplySeq(getTp)(fail) else fail
       }
-    else {
+    else
       assert(unapplyName == nme.unapply)
-      if (isProductMatch(unapplyResult, args.length, pos))
+      if isProductMatch(unapplyResult, args.length, pos) then
         productSelectorTypes(unapplyResult, pos)
-      else if (isGetMatch(unapplyResult, pos))
+      else if isGetMatch(unapplyResult, pos) then
         getUnapplySelectors(getTp, args, pos)
-      else if (unapplyResult.widenSingleton isRef defn.BooleanClass)
+      else if unapplyResult.widenSingleton.isRef(defn.BooleanClass) then
         Nil
-      else if (defn.isProductSubType(unapplyResult))
+      else if defn.isProductSubType(unapplyResult) then
         productSelectorTypes(unapplyResult, pos)
-          // this will cause a "wrong number of arguments in pattern" error later on,
-          // which is better than the message in `fail`.
+        // this will cause a "wrong number of arguments in pattern" error later on,
+        // which is better than the message in `fail`.
       else fail
-    }
   }
 
   def wrapDefs(defs: mutable.ListBuffer[Tree], tree: Tree)(using Context): Tree =
-    if (defs != null && defs.nonEmpty) tpd.Block(defs.toList, tree) else tree
+    if defs == null || defs.isEmpty then tree else tpd.Block(defs.toList, tree)
 
   /** Find reference to default parameter getter for parameter #n in current
     *  parameter list, or NoType if none was found
@@ -209,56 +199,45 @@ object Applications {
   def findDefaultGetter(fn: Tree, n: Int, testOnly: Boolean)(using Context): Tree =
     if fn.symbol.isTerm then
       val meth = fn.symbol.asTerm
-      val receiver: Tree = methPart(fn) match {
+      val receiver: Tree = methPart(fn) match
         case Select(receiver, _) => receiver
-        case mr => mr.tpe.normalizedPrefix match {
-          case mr: TermRef => ref(mr)
+        case mr                  => mr.tpe.normalizedPrefix match
+          case mr: TermRef  => ref(mr)
           case mr: ThisType => singleton(mr)
-          case mr =>
-            if testOnly then
-              // In this case it is safe to skolemize now; we will produce a stable prefix for the actual call.
-              ref(mr.narrow)
-            else
-              EmptyTree
-        }
-      }
+          case mr           => if testOnly then ref(mr.narrow) else EmptyTree // In this case it is safe to skolemize now; we will produce a stable prefix for the actual call.
       val getterPrefix =
-        if (meth.is(Synthetic) && meth.name == nme.apply) nme.CONSTRUCTOR else meth.name
+        if meth.is(Synthetic) && meth.name == nme.apply then nme.CONSTRUCTOR else meth.name
       def getterName = DefaultGetterName(getterPrefix, n + numArgs(fn))
       if !meth.hasDefaultParams then
         EmptyTree
-      else if (receiver.isEmpty) {
+      else if receiver.isEmpty then
         def findGetter(cx: Context): Tree =
-          if (cx eq NoContext) EmptyTree
-          else if (cx.scope != cx.outer.scope &&
-            cx.denotNamed(meth.name).hasAltWith(_.symbol == meth)) {
+          if cx eq NoContext then EmptyTree
+          else if cx.scope != cx.outer.scope && cx.denotNamed(meth.name).hasAltWith(_.symbol == meth) then
             val denot = cx.denotNamed(getterName)
-            if (denot.exists) ref(TermRef(cx.owner.thisType, getterName, denot))
-            else findGetter(cx.outer)
-          }
+            if denot.exists
+              then ref(TermRef(cx.owner.thisType, getterName, denot))
+              else findGetter(cx.outer)
           else findGetter(cx.outer)
         findGetter(ctx)
-      }
-      else {
-        def selectGetter(qual: Tree): Tree = {
+      else
+        def selectGetter(qual: Tree): Tree =
           val getterDenot = qual.tpe.member(getterName)
-          if (getterDenot.exists) qual.select(TermRef(qual.tpe, getterName, getterDenot))
-          else EmptyTree
-        }
-        if (!meth.isClassConstructor)
+          if getterDenot.exists
+            then qual.select(TermRef(qual.tpe, getterName, getterDenot))
+            else EmptyTree
+        if !meth.isClassConstructor then
           selectGetter(receiver)
-        else {
+        else
           // default getters for class constructors are found in the companion object
           val cls = meth.owner
           val companion = cls.companionModule
-          if (companion.isTerm) {
+          if companion.isTerm then
             val prefix = receiver.tpe.baseType(cls).normalizedPrefix
-            if (prefix.exists) selectGetter(ref(TermRef(prefix, companion.asTerm)))
-            else EmptyTree
-          }
+            if prefix.exists
+              then selectGetter(ref(TermRef(prefix, companion.asTerm)))
+              else EmptyTree
           else EmptyTree
-        }
-      }
     else EmptyTree // structural applies don't have symbols or defaults
   end findDefaultGetter
 

@@ -89,15 +89,12 @@ object PatternMatcher {
     private val resultLabel =
       newSymbol(ctx.owner, PatMatResultName.fresh(), Synthetic | Label, resultType)
 
-    /** A map from variable symbols to their defining trees
-     *  and from labels to their defining plans
-     */
+    /** A map from variable symbols to their defining trees and from labels to their defining plans. */
     private val initializer = MutableSymbolMap[Tree]()
 
     private def newVar(rhs: Tree, flags: FlagSet, tpe: Type): TermSymbol =
-      newSymbol(ctx.owner, PatMatStdBinderName.fresh(), Synthetic | Case | flags,
-        sanitize(tpe), coord = rhs.span)
-        // TODO: Drop Case once we use everywhere else `isPatmatGenerated`.
+      newSymbol(ctx.owner, PatMatStdBinderName.fresh(), Synthetic | Case | flags, sanitize(tpe), coord = rhs.span)
+      // TODO: Drop Case once we use everywhere else `isPatmatGenerated`.
 
     /** The plan `let x = rhs in body(x)` where `x` is a fresh variable */
     private def letAbstract(rhs: Tree, tpe: Type = NoType)(body: Symbol => Plan): Plan = {
@@ -109,29 +106,19 @@ object PatternMatcher {
 
     /** The plan `l: { expr(l) }` where `l` is a fresh label */
     private def altsLabeledAbstract(expr: (=> Plan) => Plan): Plan = {
-      val label = newSymbol(ctx.owner, PatMatAltsName.fresh(), Synthetic | Label,
-        defn.UnitType)
+      val label = newSymbol(ctx.owner, PatMatAltsName.fresh(), Synthetic | Label, defn.UnitType)
       LabeledPlan(label, expr(ReturnPlan(label)))
     }
 
     /** Test whether a type refers to a pattern-generated variable */
-    private val refersToInternal = new TypeAccumulator[Boolean] {
+    private val refersToInternal = new TypeAccumulator[Boolean]:
       def apply(x: Boolean, tp: Type) =
-        x || {
-          tp match {
-            case tp: TermRef => isPatmatGenerated(tp.symbol)
-            case _ => false
-          }
-        } || foldOver(x, tp)
-    }
+        x || (tp match { case tp: TermRef => isPatmatGenerated(tp.symbol) case _ => false }) || foldOver(x, tp)
 
-    /** Widen type as far as necessary so that it does not refer to a pattern-
-     *  generated variable.
-     */
-    private def sanitize(tp: Type): Type = tp.widenIfUnstable match {
+    /** Widen type as far as necessary so that it does not refer to a pattern-generated variable. */
+    private def sanitize(tp: Type): Type = tp.widenIfUnstable match
       case tp: TermRef if refersToInternal(false, tp) => sanitize(tp.underlying)
-      case tp => tp
-    }
+      case tp                                         => tp
 
     // ------- Plan and test types ------------------------
 
@@ -141,20 +128,19 @@ object PatternMatcher {
     /** The different kinds of plans */
     sealed abstract class Plan { val id: Int = nxId; nxId += 1 }
 
-    case class TestPlan(test: Test, var scrutinee: Tree, span: Span,
-                        var onSuccess: Plan) extends Plan {
-      override def equals(that: Any): Boolean = that match {
-        case that: TestPlan => this.scrutinee === that.scrutinee && this.test == that.test
-        case _ => false
+    case class TestPlan(test: Test, var scrutinee: Tree, span: Span, var onSuccess: Plan) extends Plan {
+      override def hashCode = scrutinee.hash * 41 + test.hashCode
+      override def equals(that: Any) = that match {
+        case that: TestPlan => scrutinee === that.scrutinee && test == that.test
+        case _              => false
       }
-      override def hashCode: Int = scrutinee.hash * 41 + test.hashCode
     }
 
-    case class LetPlan(sym: TermSymbol, var body: Plan) extends Plan
+    case class     LetPlan(sym: TermSymbol, var body: Plan) extends Plan
     case class LabeledPlan(sym: TermSymbol, var expr: Plan) extends Plan
-    case class ReturnPlan(var label: TermSymbol) extends Plan
-    case class SeqPlan(var head: Plan, var tail: Plan) extends Plan
-    case class ResultPlan(var tree: Tree) extends Plan
+    case class  ReturnPlan(var label: TermSymbol)           extends Plan
+    case class     SeqPlan(var head: Plan, var tail: Plan)  extends Plan
+    case class  ResultPlan(var tree: Tree)                  extends Plan
 
     object TestPlan {
       def apply(test: Test, sym: Symbol, span: Span, ons: Plan): TestPlan =
@@ -163,24 +149,18 @@ object PatternMatcher {
 
     /** The different kinds of tests */
     sealed abstract class Test
-    case class TypeTest(tpt: Tree, trusted: Boolean) extends Test {  // scrutinee.isInstanceOf[tpt]
-      override def equals(that: Any): Boolean = that match {
-        case that: TypeTest => this.tpt.tpe =:= that.tpt.tpe
-        case _ => false
-      }
-      override def hashCode: Int = tpt.tpe.hash
+    case class      TypeTest(tpt: Tree, trusted: Boolean) extends Test {  // scrutinee.isInstanceOf[tpt]
+      override def equals(x: Any) = x match { case x: TypeTest => tpt.tpe =:= x.tpt.tpe case _ => false }
+      override def hashCode       = tpt.tpe.hash
     }
-    case class EqualTest(tree: Tree) extends Test {                  // scrutinee == tree
-      override def equals(that: Any): Boolean = that match {
-        case that: EqualTest => this.tree === that.tree
-        case _ => false
-      }
-      override def hashCode: Int = tree.hash
+    case class     EqualTest(tree: Tree) extends Test {                   // scrutinee == tree
+      override def equals(x: Any) = x match { case x: EqualTest => tree === x.tree case _ => false }
+      override def hashCode       = tree.hash
     }
-    case class LengthTest(len: Int, exact: Boolean) extends Test     // scrutinee (== | >=) len
-    case object NonEmptyTest extends Test                            // !scrutinee.isEmpty
-    case object NonNullTest extends Test                             // scrutinee ne null
-    case object GuardTest extends Test                               // scrutinee
+    case class    LengthTest(len: Int, exact: Boolean) extends Test       // scrutinee (== | >=) len
+    case object NonEmptyTest extends Test                                 // !scrutinee.isEmpty
+    case object  NonNullTest extends Test                                 // scrutinee ne null
+    case object    GuardTest extends Test                                 // scrutinee
 
     // ------- Generating plans from trees ------------------------
 
@@ -188,8 +168,7 @@ object PatternMatcher {
     private val nonNull = mutable.Set[Symbol]()
 
     /** A conservative approximation of which patterns do not discern anything.
-      * They are discarded during the translation.
-      */
+      * They are discarded during the translation. */
     private object WildcardPattern {
       def unapply(pat: Tree): Boolean = pat match {
         case Typed(_, tpt) if tpt.tpe.isRepeatedParam => true
@@ -205,7 +184,7 @@ object PatternMatcher {
     private object VarArgPattern {
       def unapply(pat: Tree): Option[Tree] = swapBind(pat) match {
         case Typed(pat1, tpt) if tpt.tpe.isRepeatedParam => Some(pat1)
-        case _ => None
+        case _                                           => None
       }
     }
 
@@ -213,23 +192,18 @@ object PatternMatcher {
      *  This brings out the type tests to where they can be analyzed.
      */
     private def swapBind(tree: Tree): Tree = tree match {
-      case Bind(name, pat0) =>
-        swapBind(pat0) match {
-          case Typed(pat, tpt) => Typed(cpy.Bind(tree)(name, pat), tpt)
-          case _ => tree
-        }
+      case Bind(name, pat0) => swapBind(pat0) match {
+        case Typed(pat, tpt) => Typed(cpy.Bind(tree)(name, pat), tpt)
+        case _               => tree
+      }
       case _ => tree
     }
 
     /** Plan for matching `scrutinee` symbol against `tree` pattern */
     private def patternPlan(scrutinee: Symbol, tree: Tree, onSuccess: Plan): Plan = {
-
-      extension (tree: Tree) def avoidPatBoundType(): Type =
-        tree.tpe.widen match
-        case tref: TypeRef if tref.symbol.isPatternBound =>
-          defn.AnyType
-        case _ =>
-          tree.tpe
+      extension (tree: Tree) def avoidPatBoundType: Type = tree.tpe.widen match
+        case tref: TypeRef if tref.symbol.isPatternBound => defn.AnyType
+        case _                                           => tree.tpe
 
       /** Plan for matching `selectors` against argument patterns `args` */
       def matchArgsPlan(selectors: List[Tree], args: List[Tree], onSuccess: Plan): Plan = {
@@ -251,7 +225,7 @@ object PatternMatcher {
          */
         def matchArgsSelectorsPlan(selectors: List[Tree], syms: List[Symbol]): Plan =
           selectors match {
-            case selector :: selectors1 => letAbstract(selector, selector.avoidPatBoundType())(sym => matchArgsSelectorsPlan(selectors1, sym :: syms))
+            case selector :: selectors1 => letAbstract(selector, selector.avoidPatBoundType)(sym => matchArgsSelectorsPlan(selectors1, sym :: syms))
             case Nil => matchArgsPatternPlan(args, syms.reverse)
           }
         def matchArgsPatternPlan(args: List[Tree], syms: List[Symbol]): Plan =
@@ -325,45 +299,37 @@ object PatternMatcher {
         def isSyntheticScala2Unapply(sym: Symbol) =
           sym.isAllOf(SyntheticCase) && sym.owner.is(Scala2x)
 
-        if (isSyntheticScala2Unapply(unapp.symbol) && caseAccessors.length == args.length)
+        if isSyntheticScala2Unapply(unapp.symbol) && caseAccessors.length == args.length then
           matchArgsPlan(caseAccessors.map(ref(scrutinee).select(_)), args, onSuccess)
-        else if (unapp.tpe <:< (defn.BooleanType))
+        else if unapp.tpe <:< defn.BooleanType then
           TestPlan(GuardTest, unapp, unapp.span, onSuccess)
         else
           letAbstract(unapp) { unappResult =>
             val isUnapplySeq = unapp.symbol.name == nme.unapplySeq
-            if (isProductMatch(unapp.tpe.widen, args.length) && !isUnapplySeq) {
-              val selectors = productSelectors(unapp.tpe).take(args.length)
-                .map(ref(unappResult).select(_))
+            if isProductMatch(unapp.tpe.widen, args.length) && !isUnapplySeq then
+              val selectors =
+                productSelectors(unapp.tpe).take(args.length).map(ref(unappResult).select(_))
               matchArgsPlan(selectors, args, onSuccess)
-            }
-            else if (isUnapplySeq && isProductSeqMatch(unapp.tpe.widen, args.length, unapp.srcPos)) {
-              val arity = productArity(unapp.tpe.widen, unapp.srcPos)
-              unapplyProductSeqPlan(unappResult, args, arity)
-            }
-            else if (isUnapplySeq && unapplySeqTypeElemTp(unapp.tpe.widen.finalResultType).exists) {
+            else if isUnapplySeq && isProductSeqMatch(unapp.tpe.widen, args.length, unapp.srcPos) then
+              unapplyProductSeqPlan(unappResult, args, productArity(unapp.tpe.widen, unapp.srcPos))
+            else if isUnapplySeq && unapplySeqTypeElemTp(unapp.tpe.widen.finalResultType).exists then
               unapplySeqPlan(unappResult, args)
-            }
-            else {
+            else
               assert(isGetMatch(unapp.tpe))
-              val argsPlan = {
-                val get = ref(unappResult).select(nme.get, _.info.isParameterless)
-                val arity = productArity(get.tpe, unapp.srcPos)
-                if (isUnapplySeq)
-                  letAbstract(get) { getResult =>
-                    if (arity > 0) unapplyProductSeqPlan(getResult, args, arity)
+              val get = ref(unappResult).select(nme.get, _.info.isParameterless)
+              val argsPlan = letAbstract(get) { getResult =>
+                if isUnapplySeq then
+                  val arity = productArity(get.tpe, unapp.srcPos)
+                  if arity > 0
+                    then unapplyProductSeqPlan(getResult, args, arity)
                     else unapplySeqPlan(getResult, args)
-                  }
                 else
-                  letAbstract(get) { getResult =>
-                    val selectors =
-                      if (args.tail.isEmpty) ref(getResult) :: Nil
-                      else productSelectors(get.tpe).map(ref(getResult).select(_))
-                    matchArgsPlan(selectors, args, onSuccess)
-                  }
+                  val selectors =
+                    if args.tail.isEmpty then List(ref(getResult))
+                    else productSelectors(get.tpe).map(ref(getResult).select(_))
+                  matchArgsPlan(selectors, args, onSuccess)
               }
               TestPlan(NonEmptyTest, unappResult, unapp.span, argsPlan)
-            }
           }
       }
 

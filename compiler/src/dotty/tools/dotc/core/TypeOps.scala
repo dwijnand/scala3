@@ -27,9 +27,7 @@ object TypeOps:
 
   @sharable var track: Boolean = false // for debugging
 
-  /** The type `tp` as seen from prefix `pre` and owner `cls`. See the spec
-   *  for what this means.
-   */
+  /** The type `tp` as seen from prefix `pre` and owner `cls`. See the spec for what this means. */
   final def asSeenFrom(tp: Type, pre: Type, cls: Symbol)(using Context): Type = {
     pre match {
       case pre: QualSkolemType =>
@@ -43,10 +41,7 @@ object TypeOps:
         // the skolemized prefix. See the i6199* tests for usecases.
         val widenedAsf = new AsSeenFromMap(pre.info, cls)
         val ret = widenedAsf.apply(tp)
-
-        if (!widenedAsf.approximated)
-          return ret
-
+        if !widenedAsf.approximated then return ret
         Stats.record("asSeenFrom skolem prefix required")
       case _ =>
     }
@@ -111,9 +106,8 @@ object TypeOps:
       }
     }
 
-    override def reapply(tp: Type): Type =
-      // derived infos have already been subjected to asSeenFrom, hence to need to apply the map again.
-      tp
+    // derived infos have already been subjected to asSeenFrom, hence to need to apply the map again.
+    override def reapply(tp: Type): Type = tp
 
     override protected def expandBounds(tp: TypeBounds): Type = {
       approximated = true
@@ -121,43 +115,29 @@ object TypeOps:
     }
   }
 
-  def isLegalPrefix(pre: Type)(using Context): Boolean =
-    pre.isStable || !ctx.phase.isTyper
+  def isLegalPrefix(pre: Type)(using Context): Boolean = pre.isStable || !ctx.phase.isTyper
 
   /** Implementation of Types#simplified */
   def simplify(tp: Type, theMap: SimplifyMap)(using Context): Type = {
-    def mapOver = (if (theMap != null) theMap else new SimplifyMap).mapOver(tp)
+    def mapOver = (if theMap == null then new SimplifyMap else theMap).mapOver(tp)
     tp match {
       case tp: NamedType =>
-        if (tp.symbol.isStatic || (tp.prefix `eq` NoPrefix)) tp
+        if tp.symbol.isStatic || (tp.prefix eq NoPrefix) then tp
         else tp.derivedSelect(simplify(tp.prefix, theMap)) match {
-          case tp1: NamedType if tp1.denotationIsCurrent =>
-            val tp2 = tp1.reduceProjection
-            //if (tp2 ne tp1) println(i"simplified $tp1 -> $tp2")
-            tp2
-          case tp1 => tp1
+          case tp1: NamedType if tp1.denotationIsCurrent => tp1.reduceProjection
+          case tp1                                       => tp1
         }
       case defn.MatchCase(pat, body) =>
         defn.MatchCase(simplify(pat, theMap), body)
       case tp: AppliedType =>
-        tp.tycon match
-          case tycon: TypeRef if tycon.info.isInstanceOf[MatchAlias] =>
-            isFullyDefined(tp, ForceDegree.all)
-          case _ =>
-        val normed = tp.tryNormalize
-        if normed.exists then normed else tp.map(simplify(_, theMap))
-      case tp: TypeParamRef =>
-        val tvar = ctx.typerState.constraint.typeVarOfParam(tp)
-        if (tvar.exists) tvar else tp
-      case  _: ThisType | _: BoundType =>
-        tp
-      case tp: AliasingBounds =>
-        tp.derivedAlias(simplify(tp.alias, theMap))
-      case AndType(l, r) if !ctx.mode.is(Mode.Type) =>
-        simplify(l, theMap) & simplify(r, theMap)
+        tp.tycon match { case x: TypeRef => x.info match { case _: MatchAlias => isFullyDefined(tp, ForceDegree.all) case _ => } case _ => }
+        tp.tryNormalize.orElse(tp.map(simplify(_, theMap)))
+      case tp: TypeParamRef                         => ctx.typerState.constraint.typeVarOfParam(tp).orElse(tp)
+      case  _: ThisType | _: BoundType              => tp
+      case tp: AliasingBounds                       => tp.derivedAlias(simplify(tp.alias, theMap))
+      case AndType(l, r) if !ctx.mode.is(Mode.Type) => simplify(l, theMap) & simplify(r, theMap)
       case tp @ OrType(l, r)
-      if !ctx.mode.is(Mode.Type)
-         && (tp.isSoft || l.isBottomType || r.isBottomType) =>
+      if !ctx.mode.is(Mode.Type) && (tp.isSoft || l.isBottomType || r.isBottomType) =>
         // Normalize A | Null and Null | A to A even if the union is hard (i.e.
         // explicitly declared), but not if -Yexplicit-nulls is set. The reason is
         // that in this case the normal asSeenFrom machinery is not prepared to deal
@@ -171,17 +151,10 @@ object TypeOps:
             && !theMap.isInstanceOf[SimplifyKeepUnchecked]
         then parent1
         else tp.derivedAnnotatedType(parent1, annot)
-      case _: MatchType =>
-        val normed = tp.tryNormalize
-        if (normed.exists) normed else mapOver
-      case tp: MethodicType =>
-        tp // See documentation of `Types#simplified`
-      case tp: SkolemType =>
-        // Mapping over a skolem creates a new skolem which by definition won't
-        // be =:= to the original one.
-        tp
-      case _ =>
-        mapOver
+      case _: MatchType     => tp.tryNormalize.orElse(mapOver)
+      case tp: MethodicType => tp // See documentation of `Types#simplified`
+      case tp: SkolemType   => tp // Mapping over a skolem creates a new skolem which by definition won't be =:= to the original one.
+      case _                => mapOver
     }
   }
 
@@ -246,8 +219,7 @@ object TypeOps:
             case _ => fallback
           }
         case tp1 @ AppliedType(tycon1, args1) =>
-          tp2 match {
-            case AppliedType(tycon2, args2) =>
+          tp2 match {case AppliedType(tycon2, args2) =>
               tp1.derivedAppliedType(
                 mergeRefinedOrApplied(tycon1, tycon2),
                 TypeComparer.lubArgs(args1, args2, tycon1.typeParams))
@@ -555,8 +527,8 @@ object TypeOps:
       args: List[Tree],
       boundss: List[TypeBounds],
       instantiate: (Type, List[Type]) => Type,
-      app: Type)(
-      using Context): List[BoundsViolation] = withMode(Mode.CheckBounds) {
+      app: Type,
+  )(using Context): List[BoundsViolation] = withMode(Mode.CheckBounds) {
     val argTypes = args.tpes
 
     /** Replace all wildcards in `tps` with `<app>#<tparam>` where `<tparam>` is the
