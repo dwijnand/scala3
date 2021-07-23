@@ -7,7 +7,7 @@ import vulpix.FileDiff
 import vulpix.TestConfiguration
 import reporting.TestReporter
 
-import dotty.tools.io.Directory
+import dotty.tools.io.{ Directory, Path }
 
 import java.io._
 import java.nio.file.{Files, Path => JPath}
@@ -60,9 +60,8 @@ class PatmatExhaustivityTest {
     FileDiff.checkAndDumpOrUpdate(path.toString, actualLines, checkFilePath)
   }
 
-  @Test
-  def patmatExhaustivity: Unit = {
-    val res = Directory(testsDir).list.toList
+  private def runTests(tests: List[Path]): Unit = {
+    val res = tests
       .filter(f => f.extension == "scala" || f.isDirectory)
       .filter { f =>
         val path = if f.isDirectory then f.path + "/" else f.path
@@ -71,7 +70,7 @@ class PatmatExhaustivityTest {
       .map(f => if f.isDirectory then compileDir(f.jpath) else compileFile(f.jpath))
 
     val failed = res.filter(!_)
-    val ignored = Directory(testsDir).list.toList.filter(_.extension == "ignore")
+    val ignored = tests.filter(_.extension == "ignore")
 
     val msg = s"Total: ${res.length + ignored.length}, Failed: ${failed.length}, Ignored: ${ignored.length}"
 
@@ -79,6 +78,9 @@ class PatmatExhaustivityTest {
 
     println(msg)
   }
+
+        def patmatExhaustivity: Unit = runTests(Directory(testsDir).list.toList)
+  @Test def patmatExhaustivit1: Unit = runTests(Directory(testsDir).resolve(Path("i13110.scala")) :: Nil)
 
   // inspect given files for tool args of the form `tool: args`
   // if args string ends in close comment, drop the `*` `/`
