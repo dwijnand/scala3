@@ -1,4 +1,5 @@
-// scalac: -Ycheck-all-patmat
+import scala.language.strictUnsealedPatmat
+
 object Perhaps {
 
   def unapply[A](oa: Option[A]): Some[Option[A]] = Some(oa)

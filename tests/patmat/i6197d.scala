@@ -1,4 +1,5 @@
-// scalac: -Ycheck-all-patmat
+import scala.language.strictUnsealedPatmat
+
 def foo(x: Array[String]) = x match {
   case _: Array[_] =>
 }

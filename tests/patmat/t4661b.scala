@@ -1,4 +1,5 @@
-// scalac: -Ycheck-all-patmat
+import scala.language.strictUnsealedPatmat
+
 class C {
   trait Foo
   class One extends Foo

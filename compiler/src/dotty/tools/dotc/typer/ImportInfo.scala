@@ -195,7 +195,9 @@ class ImportInfo(symf: Context ?=> Symbol,
    */
   def mentionsFeature(feature: TermName)(using Context): Option[Boolean] =
     def test(prefix: TermName, feature: TermName): Option[Boolean] =
-      untpd.languageImport(qualifier) match
+      val imp = untpd.languageImport(qualifier)
+      println(i"languageImport($qualifier) = $imp  vs  $prefix  for $feature")
+      imp match
         case Some(`prefix`) =>
           if forwardMapping.contains(feature) then Some(true)
           else if excluded.contains(feature) then Some(false)

@@ -605,6 +605,7 @@ object StdNames {
     val staticModule : N        = "staticModule"
     val staticPackage : N       = "staticPackage"
     val strictEquality: N       = "strictEquality"
+    val strictUnsealedPatmat: N = "strictUnsealedPatmat"
     val synchronized_ : N       = "synchronized"
     val tag: N                  = "tag"
     val tail: N                 = "tail"

@@ -1,4 +1,5 @@
-// scalac: -Ycheck-all-patmat
+import scala.language.strictUnsealedPatmat
+
 object Example {
   val op1: (Any, Any) => Unit = {
     case (_, b: Int) =>

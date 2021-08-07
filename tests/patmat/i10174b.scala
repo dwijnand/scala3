@@ -1,4 +1,5 @@
-// scalac: -Ycheck-all-patmat
+import scala.language.strictUnsealedPatmat
+
 def foo(x: Int): Unit =
     x match {
       case 1 =>

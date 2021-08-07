@@ -1,4 +1,5 @@
-// scalac: -Ycheck-all-patmat
+import scala.language.strictUnsealedPatmat
+
 trait A {}
 case object B extends A {}
 case object C extends A {}

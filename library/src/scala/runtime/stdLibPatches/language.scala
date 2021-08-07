@@ -128,6 +128,9 @@ object language:
   @compileTimeOnly("`unsafeNulls` can only be used at compile time in import statements")
   object unsafeNulls
 
+  @compileTimeOnly("`strictUnsealedPatmat` can only be used at compile time in import statements")
+  object strictUnsealedPatmat
+
   @compileTimeOnly("`future` can only be used at compile time in import statements")
   object future
 

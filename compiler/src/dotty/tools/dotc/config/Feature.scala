@@ -74,6 +74,8 @@ object Feature:
 
   def scala2ExperimentalMacroEnabled(using Context) = enabled(scala2macros)
 
+  def strictUnsealedPatmatEnabled(using Context): Boolean = enabled(nme.strictUnsealedPatmat)
+
   def sourceVersionSetting(using Context): SourceVersion =
     SourceVersion.valueOf(ctx.settings.source.value)
 

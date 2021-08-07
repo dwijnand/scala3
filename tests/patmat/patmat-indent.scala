@@ -1,4 +1,5 @@
-// scalac: -Ycheck-all-patmat
+import scala.language.strictUnsealedPatmat
+
 object Test {
   val Nil: scala.collection.immutable.Nil.type = scala.collection.immutable.Nil
   val X = 5

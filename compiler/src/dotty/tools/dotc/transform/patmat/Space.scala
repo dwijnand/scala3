@@ -852,7 +852,7 @@ class SpaceEngine(using Context) extends SpaceLogic {
       }
 
     val res = !sel.tpe.hasAnnotation(defn.UncheckedAnnot) && {
-      ctx.settings.YcheckAllPatmat.value
+      config.Feature.strictUnsealedPatmatEnabled
       || isCheckable(sel.tpe)
     }
 

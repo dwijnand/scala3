@@ -1,4 +1,5 @@
-// scalac: -Ycheck-all-patmat
+import scala.language.strictUnsealedPatmat
+
 object Test {
   def foo(x : AnyVal) = x match {case b : Boolean => "It's a bool"}
 }

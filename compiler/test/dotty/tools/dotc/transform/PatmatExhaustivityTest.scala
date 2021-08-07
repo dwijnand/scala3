@@ -7,7 +7,7 @@ import vulpix.FileDiff
 import vulpix.TestConfiguration
 import reporting.TestReporter
 
-import dotty.tools.io.Directory
+import dotty.tools.io.{ Directory, Path }
 
 import java.io._
 import java.nio.file.{Files, Path => JPath}
@@ -60,10 +60,18 @@ class PatmatExhaustivityTest {
     FileDiff.checkAndDumpOrUpdate(path.toString, actualLines, checkFilePath)
   }
 
-  @Test
   def patmatExhaustivity: Unit = {
-    val res = Directory(testsDir).list.toList
+    val paths = Directory(testsDir).list.toList
       .filter(f => f.extension == "scala" || f.isDirectory)
+    compilePaths(paths)
+  }
+
+  @Test def patmatExhaustivity1: Unit = {
+    compilePaths(List(Directory(testsDir).resolve(Path("i6197d.scala"))))
+  }
+
+  private def compilePaths(paths: List[Path]) = {
+    val res = paths
       .filter { f =>
         val path = if f.isDirectory then f.path + "/" else f.path
         path.contains(Properties.testsFilter.getOrElse(""))
