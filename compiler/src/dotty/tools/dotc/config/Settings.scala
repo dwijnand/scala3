@@ -125,7 +125,9 @@ object Settings:
         catch case _: NumberFormatException =>
           fail(s"$argValue is not an integer argument for $name", args)
 
-      def doSet(argRest: String) = ((implicitly[ClassTag[T]], args): @unchecked) match {
+      def doSet(argRest: String): ArgsSummary = ((implicitly[ClassTag[T]], args): @unchecked) match {
+        case (BooleanTag, _) if argRest != "" =>
+          argRest.toBooleanOption.fold(fail(s"'$arg' isn't a legal value for $name'", args))(update(_, args))
         case (BooleanTag, _) =>
           update(true, args)
         case (OptionTag, _) =>
