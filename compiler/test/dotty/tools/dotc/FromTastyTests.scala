@@ -19,7 +19,7 @@ class FromTastyTests {
     // > scalac -Ythrough-tasty -Ycheck:all <source>
 
     implicit val testGroup: TestGroup = TestGroup("posTestFromTasty")
-    compileTastyInDir(s"tests${JFile.separator}pos",
+    compileTastyInDir(s"tests/pos",
       fromTastyFilter = FileFilter.exclude(TestSources.posFromTastyBlacklisted)
     ).checkCompile()
   }

@@ -23,13 +23,15 @@ class ScalaJSCompilationTests extends ParallelTesting {
   def isInteractive = SummaryReport.isInteractive
   def testFilter = Properties.testsFilter
   def updateCheckFiles: Boolean = Properties.testsUpdateCheckfile
+  val classpath = mkClasspath(List(Properties.scalaJSLibrary, Properties.dottyLibraryJS))
+  val options = defaultOptions.and("-scalajs").withClasspath(classpath)
 
   // Negative tests ------------------------------------------------------------
 
   @Test def negScalaJS: Unit = {
     implicit val testGroup: TestGroup = TestGroup("negScalaJS")
     aggregateTests(
-      compileFilesInDir("tests/neg-scalajs", scalaJSOptions),
+      compileFilesInDir("tests/neg-scalajs", options),
     ).checkExpectedErrors()
   }
 }

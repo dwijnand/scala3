@@ -1285,7 +1285,7 @@ trait ParallelTesting extends RunnerOrchestration { self =>
     ) extends JointCompilationSource(name, Array(file), flags, outDir, fromTasty) {
 
       override def buildInstructions(errors: Int, warnings: Int): String = {
-        val runOrPos = if (file.getPath.startsWith(s"tests${JFile.separator}run${JFile.separator}")) "run" else "pos"
+        val runOrPos = if (file.getPath.startsWith(s"tests/run/")) "run" else "pos"
         val listName = if (fromTasty) "from-tasty" else "decompilation"
         s"""|
             |Test '$title' compiled with $errors error(s) and $warnings warning(s),
@@ -1293,11 +1293,10 @@ trait ParallelTesting extends RunnerOrchestration { self =>
             |
             |  sbt "testCompilation --from-tasty $file"
             |
-            |This tests can be disabled by adding `${file.getName}` to `compiler${JFile.separator}test${JFile.separator}dotc${JFile.separator}$runOrPos-$listName.blacklist`
+            |This tests can be disabled by adding `${file.getName}` to `compiler/test/dotc/$runOrPos-$listName.blacklist`
             |
             |""".stripMargin
       }
-
     }
 
     val targets = filteredFiles.map { f =>

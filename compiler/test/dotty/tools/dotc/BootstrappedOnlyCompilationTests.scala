@@ -10,6 +10,7 @@ import org.junit.experimental.categories.Category
 import scala.concurrent.duration._
 import vulpix._
 
+import java.io.File
 import java.nio.file._
 
 @Category(Array(classOf[BootstrappedOnlyTests]))
@@ -205,6 +206,7 @@ class BootstrappedOnlyCompilationTests {
 
 object BootstrappedOnlyCompilationTests extends ParallelTesting {
   // Test suite configuration --------------------------------------------------
+  import TestConfiguration._
 
   def maxDuration = 60.seconds
   def numberOfSlaves = Runtime.getRuntime().availableProcessors()
@@ -212,6 +214,15 @@ object BootstrappedOnlyCompilationTests extends ParallelTesting {
   def isInteractive = SummaryReport.isInteractive
   def testFilter = Properties.testsFilter
   def updateCheckFiles: Boolean = Properties.testsUpdateCheckfile
+
+  lazy val withStagingClasspath =
+    withCompilerClasspath + File.pathSeparator + mkClasspath(List(Properties.dottyStaging))
+  lazy val withTastyInspectorClasspath =
+    withCompilerClasspath + File.pathSeparator + mkClasspath(List(Properties.dottyTastyInspector))
+
+  val withCompilerOptions = defaultOptions.withCompileAndRunClasspath(withCompilerClasspath)
+  lazy val withStagingOptions = defaultOptions.withCompileAndRunClasspath(withStagingClasspath)
+  lazy val withTastyInspectorOptions = defaultOptions.withCompileAndRunClasspath(withTastyInspectorClasspath)
 
   implicit val summaryReport: SummaryReporting = new SummaryReport
   @AfterClass def tearDown(): Unit = {

@@ -336,6 +336,7 @@ object CompilationTests extends ParallelTesting {
   def isInteractive = SummaryReport.isInteractive
   def testFilter = Properties.testsFilter
   def updateCheckFiles: Boolean = Properties.testsUpdateCheckfile
+  val scala2CompatMode = TestConfiguration.defaultOptions.and("-source", "3.0-migration")
 
   implicit val summaryReport: SummaryReporting = new SummaryReport
   @AfterClass def tearDown(): Unit = {

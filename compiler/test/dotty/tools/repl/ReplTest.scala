@@ -100,4 +100,4 @@ extends ReplDriver(options, new PrintStream(out, true, StandardCharsets.UTF_8.na
 object ReplTest:
   val commonOptions = Array("-color:never", "-language:experimental.erasedDefinitions", "-pagewidth", "80")
   val defaultOptions = commonOptions ++ Array("-classpath", TestConfiguration.basicClasspath)
-  lazy val withStagingOptions = commonOptions ++ Array("-classpath", TestConfiguration.withStagingClasspath)
+  lazy val withStagingOptions = commonOptions ++ Array("-classpath", dotc.BootstrappedOnlyCompilationTests.withStagingClasspath)

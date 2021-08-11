@@ -4,12 +4,14 @@ package vulpix
 
 import java.io.File
 
+import scala.util.Properties.isJavaAtLeast
+
 object TestConfiguration {
 
   val noCheckOptions = Array(
     "-pagewidth", "120",
     "-color:never",
-    "-Xtarget", defaultTarget
+    "-Xtarget", if isJavaAtLeast("9") then "9" else "8"
   )
 
   val checkOptions = Array(
@@ -38,17 +40,6 @@ object TestConfiguration {
     Properties.dottyCompiler
   ))
 
-  lazy val withStagingClasspath =
-    withCompilerClasspath + File.pathSeparator + mkClasspath(List(Properties.dottyStaging))
-
-  lazy val withTastyInspectorClasspath =
-    withCompilerClasspath + File.pathSeparator + mkClasspath(List(Properties.dottyTastyInspector))
-
-  lazy val scalaJSClasspath = mkClasspath(List(
-    Properties.scalaJSLibrary,
-    Properties.dottyLibraryJS
-  ))
-
   def mkClasspath(classpaths: List[String]): String =
     classpaths.map({ p =>
       val file = new java.io.File(p)
@@ -61,12 +52,7 @@ object TestConfiguration {
   val commonOptions = Array("-indent", "-language:postfixOps") ++ checkOptions ++ noCheckOptions ++ yCheckOptions
   val defaultOptions = TestFlags(basicClasspath, commonOptions)
   val unindentOptions = TestFlags(basicClasspath, Array("-no-indent") ++ checkOptions ++ noCheckOptions ++ yCheckOptions)
-  val withCompilerOptions = defaultOptions.withCompileAndRunClasspath(withCompilerClasspath)
-  lazy val withStagingOptions = defaultOptions.withCompileAndRunClasspath(withStagingClasspath)
-  lazy val withTastyInspectorOptions = defaultOptions.withCompileAndRunClasspath(withTastyInspectorClasspath)
-  lazy val scalaJSOptions = defaultOptions.and("-scalajs").withClasspath(scalaJSClasspath)
   val allowDeepSubtypes = defaultOptions without "-Yno-deep-subtypes"
-  val allowDoubleBindings = defaultOptions without "-Yno-double-bindings"
   val picklingOptions = defaultOptions and (
     "-Xprint-types",
     "-Ytest-pickler",
@@ -74,17 +60,4 @@ object TestConfiguration {
     "-Yprint-pos-syms"
   )
   val picklingWithCompilerOptions = picklingOptions.withCompileAndRunClasspath(withCompilerClasspath)
-  val scala2CompatMode = defaultOptions.and("-source", "3.0-migration")
-  val explicitUTF8 = defaultOptions and ("-encoding", "UTF8")
-  val explicitUTF16 = defaultOptions and ("-encoding", "UTF16")
-
-  /** Enables explicit nulls */
-  val explicitNullsOptions = defaultOptions and "-Yexplicit-nulls"
-
-  /** Default target of the generated class files */
-  private def defaultTarget: String = {
-    import scala.util.Properties.isJavaAtLeast
-
-    if isJavaAtLeast("9") then "9" else "8"
-  }
 }
