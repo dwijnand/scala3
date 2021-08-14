@@ -8,7 +8,7 @@ import java.io.IOException
 import java.util.jar.Attributes.{ Name => AttributeName }
 import java.nio.charset.StandardCharsets
 
-/** Loads `library.properties` from the jar. */
+/** Loads `compiler.properties` from the jar. */
 object Properties extends PropertiesTrait {
   protected def propCategory: String = "compiler"
   protected def pickJarBasedOn: Class[PropertiesTrait] = classOf[PropertiesTrait]
@@ -43,7 +43,7 @@ trait PropertiesTrait {
 
   def propIsSet(name: String): Boolean                  = System.getProperty(name) != null
   def propIsSetTo(name: String, value: String): Boolean = propOrNull(name) == value
-  def propOrElse(name: String, alt: String): String     = System.getProperty(name, alt)
+  def propOrElse(name: String, alt: => String): String  = Option(System.getProperty(name)).getOrElse(alt)
   def propOrEmpty(name: String): String                 = propOrElse(name, "")
   def propOrNull(name: String): String                  = propOrElse(name, null)
   def propOrNone(name: String): Option[String]          = Option(propOrNull(name))
@@ -51,13 +51,13 @@ trait PropertiesTrait {
   def setProp(name: String, value: String): String      = System.setProperty(name, value)
   def clearProp(name: String): String                   = System.clearProperty(name)
 
-  def envOrElse(name: String, alt: String): String      = Option(System getenv name) getOrElse alt
+  def envOrElse(name: String, alt: => String): String   = Option(System getenv name) getOrElse alt
   def envOrNone(name: String): Option[String]           = Option(System getenv name)
 
-  // for values based on propFilename
-  def scalaPropOrElse(name: String, alt: String): String = scalaProps.getProperty(name, alt)
-  def scalaPropOrEmpty(name: String): String             = scalaPropOrElse(name, "")
-  def scalaPropOrNone(name: String): Option[String]      = Option(scalaProps.getProperty(name))
+  // for values based on propFilename, falling back to System properties
+  def scalaPropOrElse(name: String, alt: => String): String = scalaPropOrNone(name).getOrElse(alt)
+  def scalaPropOrEmpty(name: String): String                = scalaPropOrElse(name, "")
+  def scalaPropOrNone(name: String): Option[String]         = Option(scalaProps.getProperty(name)).orElse(propOrNone("scala." + name))
 
   /** Either the development or release version if known, otherwise
    *  the empty string.
@@ -90,9 +90,9 @@ trait PropertiesTrait {
    */
   val experimental: Boolean = versionString.contains("SNAPSHOT") || versionString.contains("NIGHTLY") || versionString.contains("nonbootstrapped")
 
-  val copyrightString: String       = scalaPropOrElse("copyright.string", "(c) 2002-2017 LAMP/EPFL")
+  val copyrightString: String = scalaPropOrElse("copyright.string", "Copyright 2002-2021, LAMP/EPFL and Lightbend, Inc.")
 
-  /** This is the encoding to use reading in source files, overridden with -encoding
+  /** This is the encoding to use reading in source files, overridden with -encoding.
    *  Note that it uses "prop" i.e. looks in the scala jar, not the system properties.
    */
   def sourceEncoding: String        = scalaPropOrElse("file.encoding", StandardCharsets.UTF_8.name)
@@ -105,10 +105,9 @@ trait PropertiesTrait {
 
   /** The default end of line character.
    */
-  def lineSeparator: String         = propOrElse("line.separator", "\n")
+  def lineSeparator: String         = System.lineSeparator()
 
-  /** Various well-known properties.
-   */
+  /** Various well-known properties.  */
   def javaClassPath: String         = propOrEmpty("java.class.path")
   def javaHome: String              = propOrEmpty("java.home")
   def javaVendor: String            = propOrEmpty("java.vendor")
@@ -117,6 +116,10 @@ trait PropertiesTrait {
   def javaVmName: String            = propOrEmpty("java.vm.name")
   def javaVmVendor: String          = propOrEmpty("java.vm.vendor")
   def javaVmVersion: String         = propOrEmpty("java.vm.version")
+  def javaSpecVersion: String       = propOrEmpty("java.specification.version")
+  def javaSpecVendor: String        = propOrEmpty("java.specification.vendor")
+  def javaSpecName: String          = propOrEmpty("java.specification.name")
+  def jdkHome: String               = envOrElse("JDK_HOME", envOrElse("JAVA_HOME", javaHome))
   def osName: String                = propOrEmpty("os.name")
   def scalaHome: String             = propOrEmpty("scala.home")
   def tmpDir: String                = propOrEmpty("java.io.tmpdir")
@@ -124,17 +127,22 @@ trait PropertiesTrait {
   def userHome: String              = propOrEmpty("user.home")
   def userName: String              = propOrEmpty("user.name")
 
-  /** Some derived values.
-   */
+  /** Some derived values.  */
+  /** Returns `true` iff the underlying operating system is a version of Microsoft Windows. */
   def isWin: Boolean                = osName startsWith "Windows"
-  def isMac: Boolean                = javaVendor startsWith "Apple"
+  // See https://mail.openjdk.java.net/pipermail/macosx-port-dev/2012-November/005148.html for
+  // the reason why we don't follow developer.apple.com/library/mac/#technotes/tn2002/tn2110.
+  /** Returns `true` iff the underlying operating system is a version of Apple Mac OSX.  */
+  def isMac: Boolean                 = osName startsWith "Mac OS X"
+  /** Returns `true` iff the underlying operating system is a Linux distribution. */
+  def isLinux               = osName startsWith "Linux"
 
-  // This is looking for javac, tools.jar, etc.
-  // Tries JDK_HOME first, then the more common but likely jre JAVA_HOME,
-  // and finally the system property based javaHome.
-  def jdkHome: String               = envOrElse("JDK_HOME", envOrElse("JAVA_HOME", javaHome))
+  def coloredOutputEnabled: Boolean = propOrElse("scala.color", "auto") match {
+    case "auto" => System.console() != null && !isWin
+    case s      => s == "" || "true".equalsIgnoreCase(s)
+  }
 
-  def versionMsg: String            = "Scala %s %s -- %s".format(propCategory, versionString, copyrightString)
+  def versionMsg: String            = s"Scala $propCategory $versionString -- $copyrightString"
   def scalaCmd: String              = if (isWin) "scala.bat" else "scala"
   def scalacCmd: String             = if (isWin) "scalac.bat" else "scalac"
 }
