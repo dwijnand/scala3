@@ -70,8 +70,6 @@ class DottyLanguageServer extends LanguageServer
       val configFile = new File(new URI(rootUri + '/' + IDE_CONFIG_FILE))
       val configs: List[ProjectConfig] = (new ObjectMapper).readValue(configFile, classOf[Array[ProjectConfig]]).toList
 
-      val defaultFlags = List("-color:never" /*, "-Yplain-printer","-Yprint-pos"*/)
-
       myDrivers = new mutable.HashMap
       for (config <- configs) {
         implicit class updateDeco(ss: List[String]) {
@@ -81,12 +79,10 @@ class DottyLanguageServer extends LanguageServer
             ss1 ++ List(pathKind, pathInfo)
           }
         }
-        val settings =
-          defaultFlags ++
-          config.compilerArguments.toList
-            .update("-d", config.classDirectory.getAbsolutePath)
-            .update("-classpath", (config.classDirectory +: config.dependencyClasspath).mkString(File.pathSeparator))
-            .update("-sourcepath", config.sourceDirectories.mkString(File.pathSeparator))
+        val settings = config.compilerArguments.toList
+          .update("-d", config.classDirectory.getAbsolutePath)
+          .update("-classpath", (config.classDirectory +: config.dependencyClasspath).mkString(File.pathSeparator))
+          .update("-sourcepath", config.sourceDirectories.mkString(File.pathSeparator))
         myDrivers(config) = new InteractiveDriver(settings)
       }
     myDrivers
@@ -131,7 +127,6 @@ class DottyLanguageServer extends LanguageServer
     /** The driver instance responsible for decompiling `uri` in `classPath` */
   def decompilerDriverFor(uri: URI, classPath: String): IDEDecompilerDriver = thisServer.synchronized {
     val config = configFor(uri)
-    val defaultFlags = List("-color:never")
 
     implicit class updateDeco(ss: List[String]) {
       def update(pathKind: String, pathInfo: String) = {
@@ -140,10 +135,8 @@ class DottyLanguageServer extends LanguageServer
         ss1 ++ List(pathKind, pathInfo)
       }
     }
-    val settings =
-      defaultFlags ++
-      config.compilerArguments.toList
-        .update("-classpath", (classPath +: config.dependencyClasspath).mkString(File.pathSeparator))
+    val settings = config.compilerArguments.toList
+      .update("-classpath", (classPath +: config.dependencyClasspath).mkString(File.pathSeparator))
     new IDEDecompilerDriver(settings)
   }
 

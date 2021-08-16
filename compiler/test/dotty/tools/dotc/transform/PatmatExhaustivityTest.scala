@@ -17,9 +17,9 @@ import org.junit.Test
 
 class PatmatExhaustivityTest {
   val testsDir = "tests/patmat"
-  // pagewidth/color: for a stable diff as the defaults are based on the terminal (e.g size)
+  // pagewidth: for a stable diff as the defaults are based on the terminal (e.g size)
   // stop-after: patmatexhaust-huge.scala crash compiler (but also hides other warnings..)
-  val options = List("-pagewidth", "80", "-color:never", "-Ystop-after:explicitSelf", "-classpath", TestConfiguration.basicClasspath)
+  val options = List("-pagewidth", "80", "-Ystop-after:explicitSelf", "-classpath", TestConfiguration.basicClasspath)
 
   private def compile(files: List[JPath]): Seq[String] = {
     val opts         = toolArgsFor(files)

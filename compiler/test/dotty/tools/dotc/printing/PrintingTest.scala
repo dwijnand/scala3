@@ -21,7 +21,7 @@ import org.junit.Test
 class PrintingTest {
 
   def options(phase: String) =
-    List(s"-Xprint:$phase", "-color:never", "-classpath", TestConfiguration.basicClasspath)
+    List(s"-Xprint:$phase", "-classpath", TestConfiguration.basicClasspath)
 
   private def compileFile(path: JPath, phase: String): Boolean = {
     val baseFilePath  = path.toString.stripSuffix(".scala")

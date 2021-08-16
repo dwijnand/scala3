@@ -21,7 +21,6 @@ class ScriptEngine extends AbstractScriptEngine {
     Array(
       "-classpath", "", // Avoid the default "."
       "-usejavacp",
-      "-color:never",
       "-Xrepl-disable-display"
     ), Console.out, None)
   private val rendering = new Rendering(Some(getClass.getClassLoader))

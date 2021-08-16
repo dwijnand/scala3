@@ -75,6 +75,44 @@ trait AllScalaSettings extends CommonScalaSettings, PluginSettings, VerboseSetti
   val wikiSyntax: Setting[Boolean] = BooleanSetting("-Xwiki-syntax", "Retains the Scala2 behavior of using Wiki Syntax in Scaladoc.")
 end AllScalaSettings
 
+private object TerminalBuilderSupport:
+  import java.util.ServiceLoader
+
+  var _consoleOutput: java.lang.Boolean = null
+  var _consoleInput:  java.lang.Boolean = null
+
+  def consoleOutput: Boolean = _consoleOutput
+  def consoleInput:  Boolean = _consoleInput
+
+  locally {
+    if sys.props.getOrElse(org.jline.terminal.TerminalBuilder.PROP_JNA, "true").toBoolean then
+      try {
+        val jna = load(classOf[org.jline.terminal.spi.JnaSupport])
+        println(s"jna loaded")
+        _consoleOutput = jna.isConsoleOutput
+        _consoleInput  = jna.isConsoleInput
+      } catch { case _: Throwable => }
+    println(s"after jna out=$_consoleOutput in=$_consoleInput")
+
+    if sys.props.getOrElse(org.jline.terminal.TerminalBuilder.PROP_JANSI, "true").toBoolean then
+      try {
+        val jansi = load(classOf[org.jline.terminal.spi.JansiSupport])
+        println(s"jansi loaded")
+        _consoleOutput = jansi.isConsoleOutput
+        _consoleInput  = jansi.isConsoleInput
+      } catch { case _: Throwable => }
+    println(s"after jansi $_consoleOutput in=$_consoleInput")
+
+    if _consoleOutput == null then
+      try
+        _consoleInput  = org.jline.terminal.impl.ExecPty.current() != null || _consoleInput
+        _consoleOutput = true
+      catch { case e: Exception => }
+  }
+
+  private def load[S](cls: Class[S]) =
+    java.util.ServiceLoader.load(cls, cls.getClassLoader).iterator.next
+
 /** Settings shared by compiler and scaladoc */
 trait CommonScalaSettings:
   self: SettingGroup =>
@@ -87,10 +125,20 @@ trait CommonScalaSettings:
   val sourcepath: Setting[String] = PathSetting("-sourcepath", "Specify location(s) of source files.", Defaults.scalaSourcePath, aliases = List("--source-path"))
   val sourceroot: Setting[String] = PathSetting("-sourceroot", "Specify workspace root directory.", ".")
 
+  def coloredOutputEnabled = {
+    val withColours = Properties.coloredOutputEnabled
+    val prop = Properties.propOrElse("scala.color", "auto")
+    val console = System.console()
+    val consoleOutput = TerminalBuilderSupport.consoleOutput
+    val consoleInput  = TerminalBuilderSupport.consoleInput
+    println(s"withColours=$withColours prop=$prop console=$console consoleOutput=$consoleOutput consoleInput=$consoleInput")
+    withColours
+  }
+
   val classpath: Setting[String] = PathSetting("-classpath", "Specify where to find user class files.", ScalaSettings.defaultClasspath, aliases = List("-cp", "--class-path"))
   val outputDir: Setting[AbstractFile] = OutputSetting("-d", "directory|jar", "Destination for generated classfiles.",
     new PlainDirectory(Directory(".")))
-  val color: Setting[String] = ChoiceSetting("-color", "mode", "Colored output", List("always", "never"/*, "auto"*/), "always"/* "auto"*/, aliases = List("--color"))
+  val color: Setting[String] = ChoiceSetting("-color", "mode", "Colored output", List("always", "never"), if coloredOutputEnabled then "always" else "never", aliases = List("--color"))
   val verbose: Setting[Boolean] = BooleanSetting("-verbose", "Output messages about what the compiler is doing.", aliases = List("--verbose"))
   val version: Setting[Boolean] = BooleanSetting("-version", "Print product version and exit.", aliases = List("--version"))
   val help: Setting[Boolean] = BooleanSetting("-help", "Print a synopsis of standard options.", aliases = List("--help"))

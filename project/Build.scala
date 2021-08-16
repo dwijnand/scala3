@@ -487,6 +487,32 @@ object Build {
   def findArtifactPath(classpath: Def.Classpath, name: String): String =
     findArtifact(classpath, name).getAbsolutePath
 
+  final class Scala3ForkRun(config: ForkOptions) extends ForkRun(config: ForkOptions) {
+    override def fork(mainClass: String, classpath: Seq[File], options: Seq[String], log: Logger) = {
+      import java.lang.ProcessBuilder, config._
+      val optsStr = options.map(str => if (str.contains(" ")) "\"" + str + "\"" else str).mkString(" ")
+      log.info(s"running (fork) $mainClass $optsStr")
+      val command = (javaHome.getOrElse(file(sys.props("java.home"))) / "bin" / "java").getAbsolutePath ::
+        runJVMOptions.toList :::
+        (if (bootJars.isEmpty) Nil else List("-Xbootclasspath/a:" + bootJars.mkString(File.pathSeparator))) :::
+        "-classpath" :: sbt.io.Path.makeString(classpath) ::
+        mainClass ::
+        options.toList
+      val jpb = new ProcessBuilder(command.toArray: _*)
+      workingDirectory.foreach(jpb.directory(_))
+      for ((k, v) <- envVars) jpb.environment.put(k, v)
+      if (connectInput) jpb.redirectInput(ProcessBuilder.Redirect.INHERIT)
+      jpb.redirectOutput(ProcessBuilder.Redirect.INHERIT)
+      val process = _root_.scala.sys.process.Process(jpb)
+      config.outputStrategy.getOrElse(OutputStrategy.LoggedOutput(log)) match {
+        case StdoutOutput        =>                     process.run(            connectInput = false)
+        case out: BufferedOutput => out.logger.buffer { process.run(out.logger, connectInput = false) }
+        case out: LoggedOutput   =>                     process.run(out.logger, connectInput = false)
+        case out: CustomOutput   =>     (process #> out.output).run(            connectInput = false)
+      }
+    }
+  }
+
   // Settings shared between scala3-compiler and scala3-compiler-bootstrapped
   lazy val commonDottyCompilerSettings = Seq(
       // Generate compiler.properties, used by sbt
@@ -516,39 +542,39 @@ object Build {
         Dependencies.oldCompilerInterface, // we stick to the old version to avoid deprecation warnings
         "org.jline" % "jline-reader" % "3.19.0",   // used by the REPL
         "org.jline" % "jline-terminal" % "3.19.0",
-        "org.jline" % "jline-terminal-jna" % "3.19.0" // needed for Windows
+        "org.jline" % "jline-terminal-jna" % "3.19.0", // needed for Windows
+        "org.jline" % "jline-terminal-jansi" % "3.19.0",
       ),
 
-      // For convenience, change the baseDirectory when running the compiler
-      Compile / forkOptions := (Compile / forkOptions).value.withWorkingDirectory((ThisBuild / baseDirectory).value),
+      // For convenience, change the baseDirectory when running the compiler and tests
+      Compile /       forkOptions := (Compile /       forkOptions).value.withWorkingDirectory((ThisBuild / baseDirectory).value),
       Compile / run / forkOptions := (Compile / run / forkOptions).value.withWorkingDirectory((ThisBuild / baseDirectory).value),
-      // And when running the tests
-      Test / forkOptions := (Test / forkOptions).value.withWorkingDirectory((ThisBuild / baseDirectory).value),
+      Test    /       forkOptions := (Test    /       forkOptions).value.withWorkingDirectory((ThisBuild / baseDirectory).value),
 
-      Test / test := {
-        // Exclude VulpixMetaTests
-        (Test / testOnly).toTask(" -- --exclude-categories=dotty.VulpixMetaTests").value
+      Compile / run / runner := {
+        val log           = (Compile / run / streams).value.log
+        val forkOpts      = (Compile / run / forkOptions).value
+        val javaOpts      = (Compile / run / javaOptions).value
+        val defaultRunner = (Compile / run / runner).value
+        //if ((Compile / run / fork).value) {
+        //  log.debug(s"javaOptions: $javaOpts")
+        //  new Scala3ForkRun(forkOpts)
+        //} else defaultRunner
+        defaultRunner
       },
 
-      (Test / testOptions) += Tests.Argument(
-        TestFrameworks.JUnit,
-        "--run-listener=dotty.tools.ContextEscapeDetector",
-      ),
+      Test / test := (Test / testOnly).toTask(" -- --exclude-categories=dotty.VulpixMetaTests").value, // Exclude VulpixMetaTests
 
-      // Spawn new JVM in run and test
+      Test / testOptions += Tests.Argument(TestFrameworks.JUnit, "--run-listener=dotty.tools.ContextEscapeDetector"),
 
       // Add git-hash used to package the distribution to the manifest to know it in runtime and report it in REPL
       packageOptions += ManifestAttributes(("Git-Hash", VersionUtil.gitHash)),
 
       javaOptions ++= {
-        val managedSrcDir = {
-          // Populate the directory
-          (Compile / managedSources).value
-
-          (Compile / sourceManaged).value
-        }
-        val externalDeps = externalCompilerClasspathTask.value
-        val jars = packageAll.value
+        (Compile / managedSources).value // Populate the directory
+        val managedSrcDir = (Compile / sourceManaged).value
+        val externalDeps  = externalCompilerClasspathTask.value
+        val jars          = packageAll.value
 
         Seq(
           "-Ddotty.tests.dottyCompilerManagedSources=" + managedSrcDir,
@@ -565,7 +591,7 @@ object Build {
       },
 
       javaOptions += (
-        s"-Ddotty.tools.dotc.semanticdb.test=${(ThisBuild / baseDirectory).value/"tests"/"semanticdb"}"
+        s"-Ddotty.tools.dotc.semanticdb.test=${(ThisBuild / baseDirectory).value / "tests" / "semanticdb"}"
       ),
 
       testCompilation := Def.inputTaskDyn {
@@ -668,6 +694,7 @@ object Build {
         }
 
         val fullArgs = main :: (if (printTasty) args else insertClasspathInArgs(args, extraClasspath.mkString(File.pathSeparator)))
+        println(s"running Compile / runMain with $fullArgs")
 
         (Compile / runMain).toTask(fullArgs.mkString(" ", " ", ""))
       }.evaluated,

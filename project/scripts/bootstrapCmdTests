@@ -44,13 +44,13 @@ test "$EXPECTED_OUTPUT" = "$(cat "$tmp")"
 
 # check that `sbt scalac -decompile` runs
 echo "testing sbt scalac -decompile from file"
-./bin/scalac -decompile -color:never "$OUT/$TASTY" > "$tmp"
+./bin/scalac -decompile "$OUT/$TASTY" > "$tmp"
 grep -qe "def main(args: scala.Array\[scala.Predef.String\]): scala.Unit =" "$tmp"
 
 echo "testing loading tasty from .tasty file in jar"
 clear_out "$OUT"
 ./bin/scalac -d "$OUT/out.jar" "$SOURCE"
-./bin/scalac -decompile -color:never "$OUT/out.jar" > "$tmp"
+./bin/scalac -decompile "$OUT/out.jar" > "$tmp"
 grep -qe "def main(args: scala.Array\[scala.Predef.String\]): scala.Unit =" "$tmp"
 
 # echo ":quit" | ./dist/target/pack/bin/scala  # not supported by CI
