@@ -2569,13 +2569,9 @@ class TypeComparer(@constructorOnly initctx: Context) extends ConstraintHandling
             // subtype, so they must be unrelated by single inheritance
             // of classes.
             true
-          else if (isDecomposable(cls1))
-            // At this point, !cls1.derivesFrom(cls2): we know that direct
-            // instantiations of `cls1` (terms of the form `new cls1`) are not
-            // of type `tp2`. Therefore, we can safely decompose `cls1` using
-            // `.children`, even if `cls1` is non abstract.
+          else if (cls1.isClosedSum)
             decompose(cls1, tp1).forall(x => provablyDisjoint(x, tp2))
-          else if (isDecomposable(cls2))
+          else if (cls2.isClosedSum)
             decompose(cls2, tp2).forall(x => provablyDisjoint(x, tp1))
           else
             false
