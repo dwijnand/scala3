@@ -11,7 +11,7 @@ import StdNames._
 import collection.mutable
 import ast.tpd._
 import reporting.{trace, Message}
-import config.Printers.{gadts, typr}
+import config.Printers.{exhaustivity, gadts, typr}
 import config.Feature
 import typer.Applications._
 import typer.ProtoTypes._
@@ -700,6 +700,8 @@ object TypeOps:
    *  Otherwise, return NoType.
    */
   private def instantiateToSubType(tp1: NamedType, tp2: Type)(using Context): Type = {
+    exhaustivity.println(i"instantiate $tp1 to a subtype of $tp2 (${tp1.toString} to ${tp2.toString})")
+
     // In order for a child type S to qualify as a valid subtype of the parent
     // T, we need to test whether it is possible S <: T.
     //
@@ -800,9 +802,10 @@ object TypeOps:
       }
     }
 
-    val inferThisMap = new InferPrefixMap
+    val inferPrefixMap = new InferPrefixMap
     val tvars = tp1.typeParams.map { tparam => newTypeVar(tparam.paramInfo.bounds) }
-    val protoTp1 = inferThisMap.apply(tp1).appliedTo(tvars)
+    val protoTp1 = inferPrefixMap(tp1).appliedTo(tvars)
+    exhaustivity.println(i"inferPrefix: $tp1 -> $protoTp1 (${protoTp1.toString})")
 
     // If parent contains a reference to an abstract type, then we should
     // refine subtype checking to eliminate abstract types according to
@@ -818,10 +821,22 @@ object TypeOps:
       wildApprox(protoTp1)
     }
 
-    if (protoTp1 <:< tp2) instantiate()
-    else {
+    exhaustivity.println(TypeComparer.explained(_.isSubType(protoTp1, tp2)))
+    val isSub = protoTp1 <:< tp2
+    exhaustivity.println(i"$protoTp1 <:< $tp2 = $isSub")
+    if (isSub) {
+      instantiate()
+    } else {
       val approxTp2 = approximateParent(tp2)
-      if (protoTp1 <:< approxTp2 || parentQualify(protoTp1, approxTp2)) instantiate()
+      exhaustivity.println(i"approximateParent: $tp2 -> $approxTp2 (${approxTp2.toString})")
+      exhaustivity.println(TypeComparer.explained(_.isSubType(protoTp1, approxTp2)))
+      val isSub2 = protoTp1 <:< approxTp2
+      exhaustivity.println(i"$protoTp1 <:< $approxTp2 = $isSub2")
+      if (isSub2 || {
+        val qual = parentQualify(protoTp1, approxTp2)
+        exhaustivity.println(i"parentQualify($protoTp1, $approxTp2) = $qual")
+        qual
+      }) instantiate()
       else NoType
     }
   }

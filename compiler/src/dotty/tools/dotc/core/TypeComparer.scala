@@ -11,7 +11,7 @@ import collection.mutable
 import util.Stats
 import config.Config
 import config.Feature.migrateTo3
-import config.Printers.{constr, subtyping, gadts, matchTypes, noPrinter}
+import config.Printers.{addLow, constr, subtyping, gadts, matchTypes, noPrinter}
 import TypeErasure.{erasedLub, erasedGlb}
 import TypeApplications._
 import Variances.{Variance, variancesConform}
@@ -758,7 +758,10 @@ class TypeComparer(@constructorOnly initctx: Context) extends ConstraintHandling
     def tryBaseType(cls2: Symbol) = {
       val base = nonExprBaseType(tp1, cls2)
       if (base.exists && (base `ne` tp1))
-        isSubType(base, tp2, if (tp1.isRef(cls2)) approx else approx.addLow) ||
+        isSubType(base, tp2, if (tp1.isRef(cls2)) approx else {
+          addLow.println(s"addLow 1")
+          approx.addLow
+        }) ||
         base.isInstanceOf[OrType] && fourthTry
           // if base is a disjunction, this might have come from a tp1 type that
           // expands to a match type. In this case, we should try to reduce the type
@@ -776,7 +779,10 @@ class TypeComparer(@constructorOnly initctx: Context) extends ConstraintHandling
                 || narrowGADTBounds(tp1, tp2, approx, isUpper = true))
               && (tp2.isAny || GADTusage(tp1.symbol))
 
-            isSubType(hi1, tp2, approx.addLow) || compareGADT || tryLiftedToThis1
+            isSubType(hi1, tp2, {
+              addLow.println(s"addLow 2")
+              approx.addLow
+            }) || compareGADT || tryLiftedToThis1
           case _ =>
             def isNullable(tp: Type): Boolean = tp.widenDealias match {
               case tp: TypeRef => tp.symbol.isNullableClass
@@ -802,7 +808,10 @@ class TypeComparer(@constructorOnly initctx: Context) extends ConstraintHandling
                 case _ => false
             }
           case _ => false
-        comparePaths || isSubType(tp1.underlying.widenExpr, tp2, approx.addLow)
+        comparePaths || isSubType(tp1.underlying.widenExpr, tp2, {
+          addLow.println(s"addLow 3")
+          approx.addLow
+        })
       case tp1: RefinedType =>
         isNewSubType(tp1.parent)
       case tp1: RecType =>
@@ -1228,13 +1237,19 @@ class TypeComparer(@constructorOnly initctx: Context) extends ConstraintHandling
               false
           }
           canConstrain(param1) && canInstantiate ||
-            isSubType(bounds(param1).hi.applyIfParameterized(args1), tp2, approx.addLow)
+            isSubType(bounds(param1).hi.applyIfParameterized(args1), tp2, {
+              addLow.println(s"addLow 4")
+              approx.addLow
+            })
         case tycon1: TypeRef =>
           val sym = tycon1.symbol
 
           def byGadtBounds: Boolean =
             sym.onGadtBounds { bounds1 =>
-              inFrozenGadt { isSubType(bounds1.hi.applyIfParameterized(args1), tp2, approx.addLow) }
+              inFrozenGadt { isSubType(bounds1.hi.applyIfParameterized(args1), tp2, {
+                addLow.println(s"addLow 5")
+                approx.addLow
+              }) }
             } && { GADTused = true; true }
 
 
@@ -1290,7 +1305,10 @@ class TypeComparer(@constructorOnly initctx: Context) extends ConstraintHandling
       if (isCovered(tp1) && isCovered(tp2))
         //println(s"useless subtype: $tp1 <:< $tp2")
         false
-      else isSubType(tp1, tp2, approx.addLow)
+      else isSubType(tp1, tp2, {
+        addLow.println(s"addLow 6")
+        approx.addLow
+      })
 
     def isSubApproxHi(tp1: Type, tp2: Type): Boolean =
       tp1.eq(tp2) || tp2.ne(NothingType) && isSubType(tp1, tp2, approx.addHigh)
