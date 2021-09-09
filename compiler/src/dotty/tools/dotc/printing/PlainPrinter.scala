@@ -612,39 +612,17 @@ class PlainPrinter(_ctx: Context) extends Printer {
     try
       // The current TyperState constraint determines how type variables are printed
       ctx.typerState.constraint = c
-      def entryText(tp: Type) = tp match {
-        case tp: TypeBounds =>
-          toText(tp)
-        case _ =>
-          " := " ~ toText(tp)
-      }
-      val indent = 3
-      val uninstVarsText = " uninstantiated variables: " ~
-        Text(c.uninstVars.map(toText), ", ")
-      val constrainedText =
-        " constrained types: " ~ Text(c.domainLambdas.map(toText), ", ")
-      val boundsText =
-        " bounds: " ~ {
-          val assocs =
-            for (param <- c.domainParams)
-            yield (" " * indent) ~ toText(param) ~ entryText(c.entry(param))
-          Text(assocs, "\n")
-        }
-      val orderingText =
-        " ordering: " ~ {
-          val deps =
-            for {
-              param <- c.domainParams
-              ups = c.minUpper(param)
-              if ups.nonEmpty
-            }
-            yield
-              (" " * indent) ~ toText(param) ~ " <: " ~
-                Text(ups.map(toText), ", ")
-          Text(deps, "\n")
-        }
-      //Printer.debugPrintUnique = false
-      Text.lines(List(uninstVarsText, constrainedText, boundsText, orderingText))
+      def txtEntry(tp: Type) = tp match { case tp: TypeBounds => toText(tp) case _ => " := " ~ toText(tp) }
+      def txtBounds(p: TypeParamRef)   = toText(p) ~ txtEntry(c.entry(p))
+      def txtOrdering(p: TypeParamRef) =
+        val ups = Text(c.minUpper(p).map(toText), ", ")
+        if ups.isEmpty then Text() else toText(p) ~ " <: " ~ ups
+      Text(List(
+        "uninstVars=[" ~ Text(c.uninstVars.map(toText), ", ") ~ "]",
+        "constrained types=["        ~ Text(c.domainLambdas.map(toText), ", ") ~ "]",
+        "bounds=["                   ~ Text(c.domainParams.map(txtBounds), ", ") ~ "]",
+        "ordering=["                 ~ Text(c.domainParams.map(txtOrdering).filter(_.isEmpty), ", ") ~ "]",
+      ), ", ")
     finally
       ctx.typerState.constraint = savedConstraint
 
