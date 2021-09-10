@@ -818,10 +818,13 @@ object TypeOps:
       wildApprox(protoTp1)
     }
 
-    if (protoTp1 <:< tp2) instantiate()
+    def couldBeSub(tp: Type, pt: Type) =
+      TypeComparer.testSubType(tp, pt) != TypeComparer.CompareResult.Fail
+
+    if (couldBeSub(protoTp1, tp2)) instantiate()
     else {
       val approxTp2 = approximateParent(tp2)
-      if (protoTp1 <:< approxTp2 || parentQualify(protoTp1, approxTp2)) instantiate()
+      if (couldBeSub(protoTp1, approxTp2) || parentQualify(protoTp1, approxTp2)) instantiate()
       else NoType
     }
   }
