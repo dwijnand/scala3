@@ -891,24 +891,35 @@ class SpaceEngine(using Context) extends SpaceLogic {
     val selTyp = toUnderlying(sel.tpe).dealias
     debug.println(i"selTyp = $selTyp")
 
+    val targetSpace = project(selTyp)
+    debug.println(s"targetSpace: ${show2(targetSpace)}")
+
     val patternSpace = Or(cases.foldLeft(List.empty[Space]) { (acc, x) =>
       val space = if (x.guard.isEmpty) project(x.pat) else Empty
-      debug.println(s"${x.pat.show} ====> ${show(space)}")
+      debug.println(s"${x.pat.show} ====> ${show2(space)}")
       space :: acc
     })
 
     val checkGADTSAT = shouldCheckExamples(selTyp)
 
     val uncovered =
-      flatten(simplify(minus(project(selTyp), patternSpace))).filter({ s =>
+      flatten(simplify(minus(targetSpace, patternSpace))).filter { s =>
         s != Empty && (!checkGADTSAT || satisfiable(s))
-      })
-
+      }
+    uncovered.foreach(s => debug.println(s"uncovered=${show2(s)}"))
 
     if uncovered.nonEmpty then
       val hasMore = uncovered.lengthCompare(6) > 0
       val deduped = dedup(uncovered.take(6))
       report.warning(PatternMatchExhaustivity(show(deduped), hasMore), sel.srcPos)
+  }
+
+  private def show2(sp: Space)(using Context): String = sp match {
+    case Empty                 => i"Empty"
+    case Or(spaces)            => i"Or(${spaces.map(show2).mkString(", ")})"
+    case Typ(tp, false)        => i"Typ($tp)"
+    case Typ(tp, true)         => i"Typ($tp, decomposed=true)"
+    case Prod(tp, fun, spaces) => i"Prod($tp, $fun, ${spaces.map(show2).mkString(", ")}"
   }
 
   private def redundancyCheckable(sel: Tree): Boolean =
