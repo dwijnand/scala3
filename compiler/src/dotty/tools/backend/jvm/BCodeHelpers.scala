@@ -240,8 +240,8 @@ trait BCodeHelpers extends BCodeIdiomatic with BytecodeWriters {
     }
 
     private def assertClassNotArray(sym: Symbol): Unit = {
-      assert(sym.isClass, sym)
-      assert(sym != defn.ArrayClass || compilingArray, sym)
+      assert(sym.isClass, s"$sym is not a class")
+      assert(sym != defn.ArrayClass || compilingArray, s"$sym is not an array")
     }
 
     private def assertClassNotArrayNotPrimitive(sym: Symbol): Unit = {
