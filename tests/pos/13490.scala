@@ -61,3 +61,22 @@ we looked at the crash briefly and it plausibly seems that yes, it's trying to d
   (and that makes no sense)
 
 */
+
+
+
+/*
+we're println debugging in Erasure.scala.
+
+before erasure:
+  DefDef(
+    foo,
+    List(),
+    TypeTree[TypeRef(TermRef(ThisType(TypeRef(NoPrefix,module class <root>)),object scala),class Any)],
+    Ident(A)))))))
+after erasure:
+  DefDef(
+    foo,
+    List(List()),
+    TypeTree[TypeRef(ThisType(TypeRef(NoPrefix,module class lang)),class Object)],
+    Ident(A)))))))
+
