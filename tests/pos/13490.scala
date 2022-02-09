@@ -7,6 +7,19 @@ object Test2:
   import Test.MyEnum.A
   def foo: Any = A
 
+/*
+
+if we avoid the export by doing `import MyApi.MyEnum.A` directly,
+after typer foo still looks like:
+
+  def foo: Any = MyApi.MyEnum#A
+
+so either the `#` thing is correct, or it's wrong somehow but without
+it ending up mattering (?)
+
+or perhaps the `#` thing is a printer bug and we're reading too much into it
+
+ */
 
 /*
 
