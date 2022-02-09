@@ -600,6 +600,7 @@ object Erasure {
 
     def erasedType(tree: untpd.Tree)(using Context): Type = {
       val tp = tree.typeOpt
+      println(s"@@@ ${tree.isTerm} ${tree.show} $tp")
       if (tree.isTerm) erasedRef(tp) else valueErasure(tp)
     }
 
