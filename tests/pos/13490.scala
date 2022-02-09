@@ -10,19 +10,41 @@ object Test2:
 
 /*
 
-before:
+after typer:
+  Test2:
+    import Test.MyEnum.A
+    def foo: Any = MyApi.MyEnum#A
+
+
+
+just before erasure:
   Test:
     final def MyEnum: MyApi.MyEnum.type = MyApi.MyEnum
     @Child[(MyApi.MyEnum.A : MyApi.MyEnum)] final type MyEnum = MyApi.MyEnum
   Test2:
-    def foo: Any = MyApi.MyEnum#A
+    def foo: Any = MyApi.MyEnum#A      // why is it `#` rather than `.`?
+                                       // this seems especially weird since A isn't an inner class, it's just a term
+                                       //    case <static> val A: MyApi.MyEnum = MyApi.MyEnum.$new(0, "A")
 
-[[syntax trees at end of                   erasure]] // tests/pos/13490.scala
+[[syntax trees at end of                   erasure]]
 
 after:
   Test:
-    final def MyEnum(): MyApi.MyEnum = MyApi.MyEnum   // singleton type widened
+    final def MyEnum(): MyApi.MyEnum = MyApi.MyEnum   // forwarder made by `export`; singleton type widened (?!)
   Test2:
     def foo(): Object = ((): MyApi.MyEnum)#A
 
- */
+// and then later...
+
+[[syntax trees at end of MegaPhase{dropOuterAccessors, checkNoSuperThis, flatten, transformWildcards, moveStatic, expandPrivate, restoreScopes, selectStatic, Collect entry points, collectSuperCalls, repeatableAnnotations}]]
+
+  Test2:
+    def foo(): Object = ((): MyApi.MyApi$MyEnum)#A
+
+
+
+one hypothesis is that the `(): MyApi.MyEnum` thing is crazy and that's the bug
+we looked at the crash briefly and it plausibly seems that yes, it's trying to do something with Unit
+  (and that makes no sense)
+
+*/
