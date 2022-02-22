@@ -1936,7 +1936,45 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
           args = args.take(tparams.length)
         }
         def typedArg(arg: untpd.Tree, tparam: ParamInfo) = {
-          def tparamBounds = tparam.paramInfoAsSeenFrom(tpt1.tpe.appliedTo(tparams.map(_ => TypeBounds.empty)))
+          def tparamBounds0= tparam.paramInfoAsSeenFrom(tpt1.tpe.appliedTo(tparams.map(_ => TypeBounds.empty)))
+          def tparamBounds = {
+            val prefix = tpt1.tpe.appliedTo(tparams.map(_ => TypeBounds.empty))
+            val res = tparam match
+              case tparam: Symbol =>
+                val tp = tparam.info
+                val cls = tparam.owner
+                val res = if cls.membersNeedAsSeenFrom(prefix) then TypeOps.asSeenFrom2(tp, prefix, cls) else tp
+                //println(i"res=$res ${res.getClass.getSimpleName}")
+                res
+              case _ => tparam.paramInfoAsSeenFrom(prefix)
+            val hi = res.bounds.hi
+            val argForParam = hi match
+              case tparamTp: NamedType =>
+                val tparam = tparamTp.symbol
+                val cls = tparam.owner
+                val base = prefix.baseType(cls)
+                base match
+                  case AppliedType(_, allArgs) =>
+                    def method(): Type = {
+                      var tparams = cls.typeParams
+                      var args = allArgs
+                      var idx = 0
+                      while (tparams.nonEmpty && args.nonEmpty) {
+                        if tparams.head eq tparam then return args.head
+                        tparams = tparams.tail
+                        args = args.tail
+                        idx += 1
+                      }
+                      NoType
+                    }
+                    method()
+                  case _ => NoType
+              case _ => NoType
+            //println(i"tparam=$tparam ${tparam.getClass.getSimpleName} prefix=$prefix ${prefix.getClass.getSimpleName} hi=$hi ${hi.getClass.getSimpleName} argForParam=$argForParam")
+            argForParam.orElse(res)
+            //println(i"tparam=$tparam ${tparam.getClass.getSimpleName} prefix=$prefix ${prefix.getClass.getSimpleName} hi=$hi ${hi.getClass.getSimpleName} argForParam=$argForParam")
+            //res
+          }
           val (desugaredArg, argPt) =
             if ctx.mode.is(Mode.Pattern) then
               (if (untpd.isVarPattern(arg)) desugar.patternVar(arg) else arg, tparamBounds)

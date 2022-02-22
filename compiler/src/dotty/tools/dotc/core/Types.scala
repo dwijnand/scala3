@@ -95,12 +95,12 @@ object Types {
 // ----- Tests -----------------------------------------------------
 
 //    // debug only: a unique identifier for a type
-//    val uniqId = {
-//      nextId = nextId + 1
-//      if (nextId == 19555)
-//        println("foo")
-//      nextId
-//    }
+    val uniqId = {
+      nextId = nextId + 1
+      //if nextId == 7183 then Thread.dumpStack()
+      //if nextId == 6445 then Thread.dumpStack()
+      nextId
+    }
 
     /** A cache indicating whether the type was still provisional, last time we checked */
     @sharable private var mightBeProvisional = true
@@ -2455,7 +2455,9 @@ object Types {
           while (tparams.nonEmpty && args.nonEmpty) {
             if (tparams.head.eq(tparam))
               return args.head match {
-                case _: TypeBounds => TypeRef(pre, tparam)
+                case tb: TypeBounds /*if tb != TypeBounds.empty*/ =>
+                  //if tb == TypeBounds.empty then Thread.dumpStack()
+                  TypeRef(pre, tparam)
                 case arg => arg
               }
             tparams = tparams.tail
@@ -2498,6 +2500,7 @@ object Types {
       else {
         if (isType) {
           val res =
+            //println(i"yeah we're here $this $prefix $res")
             if (currentSymbol.isAllOf(ClassTypeParam)) argForParam(prefix)
             else prefix.lookupRefined(name)
           if (res.exists) return res
@@ -4846,7 +4849,7 @@ object Types {
         record("MatchType.reduce computed")
         if (myReduced != null) record("MatchType.reduce cache miss")
         myReduced =
-          trace(i"reduce match type $this $hashCode", matchTypes, show = true) {
+          trace/*.force*/(i"reduce match type $this $hashCode", matchTypes, show = true) {
             def matchCases(cmp: TrackingTypeComparer): Type =
               val saved = ctx.typerState.snapshot()
               try cmp.matchCases(scrutinee.normalized, cases)

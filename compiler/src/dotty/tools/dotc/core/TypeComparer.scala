@@ -215,7 +215,22 @@ class TypeComparer(@constructorOnly initctx: Context) extends ConstraintHandling
    *  code would have two extra parameters for each of the many calls that go from
    *  one sub-part of isSubType to another.
    */
-  protected def recur(tp1: Type, tp2: Type): Boolean = trace(s"isSubType ${traceInfo(tp1, tp2)}${approx.show}", subtyping) {
+  protected def recur(tp1: Type, tp2: Type): Boolean = trace({
+    val show1 = tp1.show
+    val show2 = tp2.show
+    if show1 == "Nothing" || show1 == "Any" || show2 == "Nothing" || show2 == "Any" then "" else
+      val stack = new Exception().getStackTrace
+        .dropWhile { e =>
+          val meth = e.getMethodName
+          meth == "recur" || meth.contains("doTrace") || meth == "isSubType" || meth.contains("isSubApproxHi") ||
+            meth.contains("$anonfun") || meth.contains("apply") || meth == "necessaryEither" ||
+            meth == "either" || meth.contains("fallback") || meth == "isSub" || meth.contains("$proxy")
+        }
+      val e = stack(0)
+      val name = e.getFileName match { case "TypeComparer.scala" => "" case n => s"$n:" }
+      val f = s"${e.getMethodName} $name${e.getLineNumber}"
+      s"isSubType ${traceInfo(tp1, tp2)}${approx.show} $f"
+  }, subtyping) {
 
     def monitoredIsSubType = {
       if (pendingSubTypes == null) {
@@ -2422,7 +2437,7 @@ class TypeComparer(@constructorOnly initctx: Context) extends ConstraintHandling
   private def traceInfo(tp1: Type, tp2: Type) =
     s"${tp1.show} <:< ${tp2.show}" + {
       if (ctx.settings.verbose.value || Config.verboseExplainSubtype)
-        s" ${tp1.getClass}, ${tp2.getClass}" +
+        s" ${tp1.getClass.getSimpleName.stripPrefix("Cached")} ${tp2.getClass.getSimpleName.stripPrefix("Cached")}" +
         (if (frozenConstraint) " frozen" else "") +
         (if (ctx.mode is Mode.TypevarsMissContext) " tvars-miss-ctx" else "")
       else ""
@@ -2660,8 +2675,15 @@ class TypeComparer(@constructorOnly initctx: Context) extends ConstraintHandling
     inSubComparer(cmp)(op)
     cmp.lastTrace(header)
 
+  def explained2[T](op: ExplainingTypeComparer => T, header: String = "Subtype trace:")(using Context): (T, String) =
+    val cmp = explainingTypeComparer
+    val res = inSubComparer(cmp)(op)
+    (res, cmp.lastTrace(header))
+
   def tracked[T](op: TrackingTypeComparer => T)(using Context): T =
     inSubComparer(trackingTypeComparer)(op)
+
+  def putLine(str: String) = ()
 }
 
 object TypeComparer {
@@ -2879,7 +2901,7 @@ class TrackingTypeComparer(initctx: Context) extends TypeComparer(initctx) {
      *           None         if the match fails and we should consider the following cases
      *                        because scrutinee and pattern do not overlap
      */
-    def matchCase(cas: Type): Option[Type] = trace(i"match case $cas vs $scrut", matchTypes) {
+    def matchCase(cas: Type): Option[Type] = trace/*.force*/(i"match case $cas #${cas.uniqId} vs $scrut", matchTypes) {
       val cas1 = cas match {
         case cas: HKTypeLambda =>
           caseLambda = constrained(cas)
@@ -2890,7 +2912,10 @@ class TrackingTypeComparer(initctx: Context) extends TypeComparer(initctx) {
 
       val defn.MatchCase(pat, body) = cas1
 
-      if (isSubType(scrut, pat))
+      val isSubRes = isSubType(scrut, pat)
+      //val (isSubRes, str) = explained2(_.isSubType(scrut, pat))
+      //println(str)
+      if (isSubRes)
         // `scrut` is a subtype of `pat`: *It's a Match!*
         Some {
           caseLambda match {
@@ -2960,7 +2985,7 @@ class ExplainingTypeComparer(initctx: Context) extends TypeComparer(initctx) {
   private var skipped = false
 
   override def traceIndented[T](str: String)(op: => T): T =
-    if (skipped) op
+    if (skipped || str == "") op
     else {
       indent += 2
       val str1 = str.replace('\n', ' ')
@@ -2971,16 +2996,23 @@ class ExplainingTypeComparer(initctx: Context) extends TypeComparer(initctx) {
       res
     }
 
+  override def putLine(str: String) = b.append("\n").append(" " * indent).append(str)
+
   private def frozenNotice: String =
     if frozenConstraint then " in frozen constraint" else ""
 
   override def recur(tp1: Type, tp2: Type): Boolean =
     def moreInfo =
       if Config.verboseExplainSubtype || ctx.settings.verbose.value
-      then s" ${tp1.getClass} ${tp2.getClass}"
+      then s" ${tp1.getClass.getSimpleName.stripPrefix("Cached")} ${tp2.getClass.getSimpleName.stripPrefix("Cached")}"
       else ""
     val approx = approxState
-    traceIndented(s"${show(tp1)}  <:  ${show(tp2)}$moreInfo${approx.show}$frozenNotice") {
+    val show1 = show(tp1)
+    val show2 = show(tp2)
+    val msg =
+      //if show1 == "Any" || show1 == "Nothing" || show2 == "Any" || show2 == "Nothing" then "" else
+      s"$show1  <:  $show2$moreInfo${approx.show}$frozenNotice"
+    traceIndented(msg) {
       super.recur(tp1, tp2)
     }
 
@@ -3000,7 +3032,7 @@ class ExplainingTypeComparer(initctx: Context) extends TypeComparer(initctx) {
     }
 
   override def addConstraint(param: TypeParamRef, bound: Type, fromBelow: Boolean)(using Context): Boolean =
-    traceIndented(s"add constraint ${show(param)} ${if (fromBelow) ">:" else "<:"} ${show(bound)} $frozenNotice, constraint = ${show(ctx.typerState.constraint)}") {
+    traceIndented(s"add constraint ${show(param)} ${if (fromBelow) ">:" else "<:"} ${show(bound)} $frozenNotice, constraint = ${show(ctx.typerState.constraint).replace('\n', ' ').replaceAll(" [ ]*", " ")}") {
       super.addConstraint(param, bound, fromBelow)
     }
 

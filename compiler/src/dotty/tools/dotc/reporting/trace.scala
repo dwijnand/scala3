@@ -77,6 +77,7 @@ trait TraceSyntax:
       // Avoid evaluating question multiple time, since each evaluation
       // may cause some extra logging output.
       val q = question.replace('\n', ' ')
+      if q == "" then return op
       val leading = s"==> $q?"
       val trailing = (res: T) => s"<== $q = ${showOp(res)}"
       var finalized = false
