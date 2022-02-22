@@ -1936,44 +1936,41 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
           args = args.take(tparams.length)
         }
         def typedArg(arg: untpd.Tree, tparam: ParamInfo) = {
-          def tparamBounds0= tparam.paramInfoAsSeenFrom(tpt1.tpe.appliedTo(tparams.map(_ => TypeBounds.empty)))
           def tparamBounds = {
             val prefix = tpt1.tpe.appliedTo(tparams.map(_ => TypeBounds.empty))
-            val res = tparam match
-              case tparam: Symbol =>
-                val tp = tparam.info
-                val cls = tparam.owner
-                val res = if cls.membersNeedAsSeenFrom(prefix) then TypeOps.asSeenFrom2(tp, prefix, cls) else tp
-                //println(i"res=$res ${res.getClass.getSimpleName}")
-                res
-              case _ => tparam.paramInfoAsSeenFrom(prefix)
-            val hi = res.bounds.hi
-            val argForParam = hi match
-              case tparamTp: NamedType =>
-                val tparam = tparamTp.symbol
-                val cls = tparam.owner
-                val base = prefix.baseType(cls)
-                base match
-                  case AppliedType(_, allArgs) =>
-                    def method(): Type = {
-                      var tparams = cls.typeParams
-                      var args = allArgs
-                      var idx = 0
-                      while (tparams.nonEmpty && args.nonEmpty) {
-                        if tparams.head eq tparam then return args.head
-                        tparams = tparams.tail
-                        args = args.tail
-                        idx += 1
-                      }
-                      NoType
-                    }
-                    method()
-                  case _ => NoType
-              case _ => NoType
-            //println(i"tparam=$tparam ${tparam.getClass.getSimpleName} prefix=$prefix ${prefix.getClass.getSimpleName} hi=$hi ${hi.getClass.getSimpleName} argForParam=$argForParam")
+            val res = tparam.paramInfoAsSeenFrom(prefix)
+            def argForParam2(tp: NamedType, pre: Type): Type =
+              val tparam = tp.symbol
+              val cls = tparam.owner
+              pre.baseType(cls) match
+                case AppliedType(_, allArgs) =>
+                  var tparams = cls.typeParams
+                  var args = allArgs
+                  var idx = 0
+                  while tparams.nonEmpty && args.nonEmpty do
+                    if tparams.head eq tparam then return args.head
+                    tparams = tparams.tail
+                    args = args.tail
+                    idx += 1
+                  NoType
+                case base: AndOrType =>
+                  var tp1 = tp.argForParam(base.tp1)
+                  var tp2 = tp.argForParam(base.tp2)
+                  val variance = tparam.paramVarianceSign
+                  if isBounds(tp1) || isBounds(tp2) || variance == 0 then
+                    // compute argument as a type bounds instead of a point type
+                    tp1 = tp1.bounds
+                    tp2 = tp2.bounds
+                  if base.isAnd == variance >= 0 then tp1 & tp2 else tp1 | tp2
+                case _ =>
+                  if pre.termSymbol.is(Package) then tp.argForParam(pre.select(nme.PACKAGE))
+                  else if pre.isExactlyNothing then pre
+                  else NoType
+            end argForParam2
+            val argForParam = res.bounds.hi match
+              case tparamTp: NamedType => argForParam2(tparamTp, prefix)
+              case _                   => NoType
             argForParam.orElse(res)
-            //println(i"tparam=$tparam ${tparam.getClass.getSimpleName} prefix=$prefix ${prefix.getClass.getSimpleName} hi=$hi ${hi.getClass.getSimpleName} argForParam=$argForParam")
-            //res
           }
           val (desugaredArg, argPt) =
             if ctx.mode.is(Mode.Pattern) then

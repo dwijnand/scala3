@@ -585,7 +585,7 @@ class TreeChecker extends Phase with SymTransformer {
           val sym = tp.symbol
           i"${sym.showLocated} with ${tp.designator}, flags = ${sym.flagsString}, underlying = ${tp.underlyingIterator.toList}%, %"
         case _ =>
-          i"??($tp)"
+          "??"
       }
       if (ctx.mode.isExpr &&
           !tree.isEmpty &&

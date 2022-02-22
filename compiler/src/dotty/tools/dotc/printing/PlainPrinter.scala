@@ -631,12 +631,12 @@ class PlainPrinter(_ctx: Context) extends Printer {
           " := " ~ toText(tp)
       }
       val indent = 3
-      val uninstVarsText = " uninstVars: " ~
+      val uninstVarsText = " uninstantiated variables: " ~
         Text(c.uninstVars.map(toText), ", ")
       val constrainedText =
-        " domainLambdas: " ~ Text(c.domainLambdas.map(toText), ", ")
+        " constrained types: " ~ Text(c.domainLambdas.map(toText), ", ")
       val boundsText =
-        " domainParams: " ~ {
+        " bounds: " ~ {
           val assocs =
             for (param <- c.domainParams)
             yield (" " * indent) ~ toText(param) ~ entryText(c.entry(param))
