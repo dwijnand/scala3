@@ -1935,15 +1935,26 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
           wrongNumberOfTypeArgs(tpt1.tpe, tparams, args, tree.srcPos)
           args = args.take(tparams.length)
         }
+        var map = Map.empty[ParamInfo, Type]
         def typedArg(arg: untpd.Tree, tparam: ParamInfo) = {
           def tparamBounds = {
-            val prefix = tpt1.tpe.appliedTo(tparams.map(_ => TypeBounds.empty))
-            val res = tparam.paramInfoAsSeenFrom(prefix)
+            val tparamRefs = tparams.map { tparam1 =>
+              tparam1.paramRef
+            }
+            val targs = tparams.map { tparam1 =>
+              val TypeBounds(lo, hi) = tparam1.paramInfo.bounds
+              println(i"tparam1=$tparam1 info=${tparam1.paramInfo} lo=$lo hi=$hi ref=${tparam1.paramRef}")
+              map.getOrElse(tparam1, TypeBounds.empty)
+            }
+            //val pre = tpt1.tpe.appliedTo(tparams.map(_ => TypeBounds.empty))
+            val pre = tpt1.tpe.appliedTo(targs)
+            val res = tparam.paramInfoAsSeenFrom(pre)
             def argForParam2(tp: NamedType, pre: Type): Type =
               val tparam = tp.symbol
               val cls = tparam.owner
               pre.baseType(cls) match
                 case AppliedType(_, allArgs) =>
+                  //def applied(tp: Type) = tp.appliedTo(tp.typeParams.map(_.paramInfoAsSeenFrom(tp)))
                   var tparams = cls.typeParams
                   var args = allArgs
                   var idx = 0
@@ -1953,24 +1964,18 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
                     args = args.tail
                     idx += 1
                   NoType
-                case base: AndOrType =>
-                  var tp1 = tp.argForParam(base.tp1)
-                  var tp2 = tp.argForParam(base.tp2)
-                  val variance = tparam.paramVarianceSign
-                  if isBounds(tp1) || isBounds(tp2) || variance == 0 then
-                    // compute argument as a type bounds instead of a point type
-                    tp1 = tp1.bounds
-                    tp2 = tp2.bounds
-                  if base.isAnd == variance >= 0 then tp1 & tp2 else tp1 | tp2
-                case _ =>
-                  if pre.termSymbol.is(Package) then tp.argForParam(pre.select(nme.PACKAGE))
-                  else if pre.isExactlyNothing then pre
-                  else NoType
+                case _ => NoType
             end argForParam2
-            val argForParam = res.bounds.hi match
-              case tparamTp: NamedType => argForParam2(tparamTp, prefix)
+            def argForParam = res.bounds.hi match
+              case tp: NamedType =>
+                val isArgPrefixOf = pre.isArgPrefixOf(tp.symbol)
+                val argForParam = tp.argForParam(pre)
+                //println(i"pre=$pre isArgPrefixOf tp=$tp = $isArgPrefixOf  argForParam=$argForParam")
+                argForParam2(tp, pre)
               case _                   => NoType
-            argForParam.orElse(res)
+            //argForParam.orElse(res)
+            println(i"typeArg($arg, $tparam) = $res")
+            res
           }
           val (desugaredArg, argPt) =
             if ctx.mode.is(Mode.Pattern) then
@@ -1985,7 +1990,7 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
                 tparam.ensureCompleted() // This is needed to get the test `compileParSetSubset` to work
               case _ =>
             }
-          if (desugaredArg.isType)
+          val answer = if (desugaredArg.isType)
             arg match {
               case untpd.WildcardTypeBoundsTree()
               if tparam.paramInfo.isLambdaSub &&
@@ -2001,6 +2006,14 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
                 typedType(desugaredArg, argPt, mapPatternBounds = true)
             }
           else desugaredArg.withType(UnspecifiedErrorType)
+          val ansTp = answer.tpe
+          ansTp match
+            case TypeRef(prefix, desi) =>
+              println(i"associating $tparam (${tparam.getClass.getSimpleName}) to ${answer.tpe} (${desi.getClass.getSimpleName} ${desi.toString})")
+            case _ =>
+              println(i"associating $tparam (${tparam.getClass.getSimpleName}) to ${answer.tpe} (${answer.tpe.getClass.getSimpleName}")
+          map = map.updated(tparam, answer.tpe)
+          answer
         }
         args.zipWithConserve(tparams)(typedArg(_, _)).asInstanceOf[List[Tree]]
       }
@@ -3096,6 +3109,7 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
 
   def typedType(tree: untpd.Tree, pt: Type = WildcardType, mapPatternBounds: Boolean = false)(using Context): Tree =
     val tree1 = withMode(Mode.Type) { typed(tree, pt) }
+    //println(i"tree1=$tree1")
     if mapPatternBounds && ctx.mode.is(Mode.Pattern) && !ctx.isAfterTyper then
       tree1 match
         case tree1: TypeBoundsTree =>
@@ -3106,7 +3120,9 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
           // in `typedCase`.
           val boundName = WildcardParamName.fresh().toTypeName
           val wildcardSym = newPatternBoundSymbol(boundName, tree1.tpe & pt, tree.span)
-          untpd.Bind(boundName, tree1).withType(wildcardSym.typeRef)
+          val bind = untpd.Bind(boundName, tree1).withType(wildcardSym.typeRef)
+          println(i"bind=$bind")
+          bind
         case tree1 =>
           tree1
     else tree1

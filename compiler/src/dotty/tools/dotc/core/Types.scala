@@ -2455,7 +2455,17 @@ object Types {
           while (tparams.nonEmpty && args.nonEmpty) {
             if (tparams.head.eq(tparam))
               return args.head match {
-                case _: TypeBounds => TypeRef(pre, tparam)
+                case arg: TypeBounds
+                  //if pre.isSingleton
+                =>
+                  val res = TypeRef(pre, tparam)
+                  //val baseInfo = if base ne pre then i"\n  base=$base" else ""
+                  //if pre.isSingleton then
+                  //  println(i"returning\n  res=$res (${res.getClass.getSimpleName}) instead of\n  arg=$arg\n  pre=$pre (${pre.getClass.getSimpleName})$baseInfo")
+                    res
+                  //else
+                  //  println(i"returning\n  arg=$arg (${arg.getClass.getSimpleName}) instead of\n  res=$res\n  pre=$pre (${pre.getClass.getSimpleName})$baseInfo")
+                  //  arg
                 case arg => arg
               }
             tparams = tparams.tail
