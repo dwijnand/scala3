@@ -914,10 +914,6 @@ class SpaceEngine(using Context) extends SpaceLogic {
       else project(selTyp)
     debug.println(s"targetSpace: ${show(targetSpace)}")
 
-    // if the scrutinee's class has no children, it could just have no subtypes
-    // so let's defer emitting unreachable cases until we find one that is reached
-    val canDefer = selTyp.classSymbol.children.isEmpty
-
     var i        = 0
     val len      = cases.length
     var prevs    = List.empty[Space]
@@ -937,7 +933,7 @@ class SpaceEngine(using Context) extends SpaceLogic {
       val covered = simplify(intersect(curr, targetSpace))
       debug.println(s"covered: ${show(covered)}")
 
-      if canDefer && prev == Empty && covered == Empty then // defer until a case is reachable
+      if prev == Empty && covered == Empty then // defer until a case is reachable
         deferred ::= pat
       else {
         for (pat <- deferred.reverseIterator)
