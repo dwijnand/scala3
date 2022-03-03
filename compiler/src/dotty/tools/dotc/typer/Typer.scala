@@ -2930,7 +2930,7 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
 
   /** Typecheck and adapt tree, returning a typed tree. Parameters as for `typedUnadapted` */
   def typed(tree: untpd.Tree, pt: Type, locked: TypeVars)(using Context): Tree =
-    trace(i"typing $tree, pt = $pt", typr, show = true) {
+    trace.force(i"typing $tree, pt = $pt", typr, show = true) {
       record(s"typed $getClass")
       record("typed total")
       if ctx.phase.isTyper then
