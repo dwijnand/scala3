@@ -22,36 +22,6 @@ import dotty.tools.repl.results._
 import scala.collection.mutable
 import scala.util.chaining.given
 
-class ReplRun(comp: Compiler, ictx: Context, state: State)
-    extends Run(comp, ictx):
-
-  /** Import previous runs and user defined imports */
-  override protected def rootContext(using Context): Context = {
-    val rootCtx = super.rootContext.fresh
-      .setOwner(defn.EmptyPackageClass)
-      .withRootImports
-
-    def importPreviousRun(id: Int)(using Context) =
-      // we first import the wrapper object id
-      val path = nme.EMPTY_PACKAGE ++ "." ++ ReplCompiler.objectNames(id)
-      val ctx0 = ctx.fresh
-        .setNewScope
-        .withRootImports(RootRef(() => requiredModuleRef(path)) :: Nil)
-
-      // then its user defined imports
-      val imports = state.imports.getOrElse(id, Nil)
-      def importContext(imp: tpd.Import)(using Context) =
-        ctx.importContext(imp, imp.symbol)
-      if imports.isEmpty then ctx0
-      else imports.foldLeft(ctx0.fresh.setNewScope)((ctx, imp) =>
-        importContext(imp)(using ctx))
-
-    state.validObjectIndexes.foldLeft(rootCtx) { (ctx, id) =>
-      importPreviousRun(id)(using ctx)
-    }
-  }
-end ReplRun
-
 /** This subclass of `Compiler` is adapted for use in the REPL.
  *
  *  - compiles parsed expression in the current REPL state:
@@ -65,13 +35,13 @@ class ReplCompiler extends Compiler:
   override protected def frontendPhases: List[List[Phase]] = List(
     List(Parser()),
     List(ReplPhase()),
-    List(TyperPhase(addRootImports = false)),
+    List(TyperPhase()),
     List(CollectTopLevelImports()),
     List(PostTyper()),
   )
 
   def newRun(ictx: Context, state: State): Run =
-    val run = new ReplRun(this, ictx, state)
+    val run = new Run(this, ictx)
     run.suppressions.initSuspendedMessages(state.context.run)
     run
   end newRun
@@ -276,6 +246,23 @@ class ReplPhase extends Phase:
     var valIdx = state.valIndex
     val defs = mutable.ListBuffer.empty[Tree]
 
+    state.validObjectIndexes.foreach { id =>
+      // we first import the wrapper object id
+      val path = nme.EMPTY_PACKAGE ++ "." ++ ReplCompiler.objectNames(id)
+      // import module at path.*
+      val selectors =
+        untpd.ImportSelector(untpd.Ident(nme.WILDCARD))  // import all normal members...
+        :: untpd.ImportSelector(untpd.Ident(nme.EMPTY))  // ... and also all given members
+        :: Nil
+      defs += tpd.Import(tpd.Ident(requiredModuleRef(path)), selectors)
+
+      // then its user defined imports
+      val imports = state.imports.getOrElse(id, Nil)
+      for imp <- imports do
+        defs += untpd.TypedSplice(imp)
+    }
+
+
     /** If the user inputs a definition whose name is of the form REPL_RES_PREFIX and a number,
      *  such as `val res9 = 1`, we bump `valIdx` to avoid name clashes.  lampepfl/dotty#3536 */
     def maybeBumpValIdx(tree: Tree): Unit = tree match
@@ -304,8 +291,10 @@ class ReplPhase extends Phase:
         defs += other
     }
 
-    Definitions(defs.toList, state.copy(objectIndex = state.objectIndex + 1, valIndex = valIdx))
+    val state2 = state.copy(objectIndex = state.objectIndex + 1, valIndex = valIdx)
+    Definitions(defs.toList, state2)
   end definitions
+
 
   /** Wrap trees in an object and add imports from the previous compilations.
    *

@@ -363,7 +363,7 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
           val isNewDefScope =
             if curOwner.is(Package) && {
               val isRoot = curOwner.isRoot
-              println(i"looking for $name, curOwner=$curOwner isRoot=$isRoot")
+              //println(i"looking for $name, curOwner=$curOwner isRoot=$isRoot")
               !isRoot
             } then
               curOwner ne ctx.outer.owner
