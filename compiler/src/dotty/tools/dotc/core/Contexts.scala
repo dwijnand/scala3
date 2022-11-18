@@ -476,7 +476,7 @@ object Contexts {
 
     /** A new context that summarizes an import statement */
     def importContext(imp: Import[?], sym: Symbol): FreshContext =
-       fresh.setImportInfo(ImportInfo(sym, imp.selectors, imp.expr))
+       ctx.fresh.setImportInfo(ImportInfo(sym, imp.selectors, imp.expr))
 
     /** Is the debug option set? */
     def debug: Boolean = base.settings.Ydebug.value

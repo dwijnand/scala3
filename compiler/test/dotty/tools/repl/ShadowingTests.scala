@@ -26,7 +26,10 @@ import vulpix.{TestConfiguration, TestFlags}
  */
 object ShadowingTests:
   def classpath = TestConfiguration.basicClasspath + File.pathSeparator + shadowDir
-  def options = ReplTest.commonOptions ++ Array("-classpath", classpath)
+  def options = ReplTest.commonOptions ++ Array(
+    "-classpath", classpath,
+    //"-Ydebug-error",
+  )
   def shadowDir = dir.toAbsolutePath.toString
 
   def createSubDir(name: String): Path =
@@ -75,6 +78,18 @@ class ShadowingTests extends ReplTest(options = ShadowingTests.options):
     assert(!reporter.hasErrors, s"compilation of $file failed")
     Files.delete(file)
   end compileShadowed
+
+  @Test def io = shadowedScriptedTest(name = "io",
+    shadowed = """|package io.foo
+                  |
+                  |object Bar {
+                  |  def baz: Int = 42
+                  |}
+                  |""".stripMargin,
+    script = """|scala> io.foo.Bar.baz
+                |val res0: Int = 42
+                |""".stripMargin
+  )
 
   @Test def i7635 = shadowedScriptedTest(name = "<i7635>",
     shadowed = "class C(val c: Int)",

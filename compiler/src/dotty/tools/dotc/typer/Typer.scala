@@ -361,7 +361,11 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
           // with an error on CI which I cannot replicate locally (not even
           // with the exact list of files given).
           val isNewDefScope =
-            if curOwner.is(Package) && !curOwner.isRoot then
+            if curOwner.is(Package) && {
+              val isRoot = curOwner.isRoot
+              println(i"looking for $name, curOwner=$curOwner isRoot=$isRoot")
+              !isRoot
+            } then
               curOwner ne ctx.outer.owner
             else
               ((ctx.scope ne lastCtx.scope) || (curOwner ne lastCtx.owner))
@@ -611,6 +615,8 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
     val superAccess = qual.isInstanceOf[Super]
     val rawType = selectionType(tree, qual)
     val checkedType = accessibleType(rawType, superAccess)
+    //if !checkedType.exists then
+    //  println(i"nope: $checkedType / $rawType $tree $qual $selName")
     if checkedType.exists then
       val select = toNotNullTermRef(assignType(tree, checkedType), pt)
       if selName.isTypeName then checkStable(qual.tpe, qual.srcPos, "type prefix")
@@ -653,6 +659,7 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
 
     def typeSelectOnTerm(using Context): Tree =
       val qual = typedExpr(tree.qualifier, shallowSelectionProto(tree.name, pt, this))
+      //println(i"typed qual ${tree.qualifier} ${tree.qualifier.getClass.getSimpleName} = $qual")
       typedSelect(tree, pt, qual).withSpan(tree.span).computeNullable()
 
     def javaSelectOnType(qual: Tree)(using Context) =

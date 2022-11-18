@@ -22,6 +22,36 @@ import dotty.tools.repl.results._
 import scala.collection.mutable
 import scala.util.chaining.given
 
+class ReplRun(comp: Compiler, ictx: Context, state: State)
+    extends Run(comp, ictx):
+
+  /** Import previous runs and user defined imports */
+  override protected def rootContext(using Context): Context = {
+    val rootCtx = super.rootContext.fresh
+      .setOwner(defn.EmptyPackageClass)
+      .withRootImports
+
+    def importPreviousRun(id: Int)(using Context) =
+      // we first import the wrapper object id
+      val path = nme.EMPTY_PACKAGE ++ "." ++ ReplCompiler.objectNames(id)
+      val ctx0 = ctx.fresh
+        .setNewScope
+        .withRootImports(RootRef(() => requiredModuleRef(path)) :: Nil)
+
+      // then its user defined imports
+      val imports = state.imports.getOrElse(id, Nil)
+      def importContext(imp: tpd.Import)(using Context) =
+        ctx.importContext(imp, imp.symbol)
+      if imports.isEmpty then ctx0
+      else imports.foldLeft(ctx0.fresh.setNewScope)((ctx, imp) =>
+        importContext(imp)(using ctx))
+
+    state.validObjectIndexes.foldLeft(rootCtx) { (ctx, id) =>
+      importPreviousRun(id)(using ctx)
+    }
+  }
+end ReplRun
+
 /** This subclass of `Compiler` is adapted for use in the REPL.
  *
  *  - compiles parsed expression in the current REPL state:
@@ -40,34 +70,8 @@ class ReplCompiler extends Compiler:
     List(PostTyper()),
   )
 
-  def newRun(initCtx: Context, state: State): Run =
-    val run = new Run(this, initCtx) {
-      /** Import previous runs and user defined imports */
-      override protected def rootContext(using Context): Context = {
-        def importContext(imp: tpd.Import)(using Context) =
-          ctx.importContext(imp, imp.symbol)
-
-        def importPreviousRun(id: Int)(using Context) = {
-          // we first import the wrapper object id
-          val path = nme.EMPTY_PACKAGE ++ "." ++ ReplCompiler.objectNames(id)
-          val ctx0 = ctx.fresh
-            .setNewScope
-            .withRootImports(RootRef(() => requiredModuleRef(path)) :: Nil)
-
-          // then its user defined imports
-          val imports = state.imports.getOrElse(id, Nil)
-          if imports.isEmpty then ctx0
-          else imports.foldLeft(ctx0.fresh.setNewScope)((ctx, imp) =>
-            importContext(imp)(using ctx))
-        }
-
-        val rootCtx = super.rootContext.fresh
-          .setOwner(defn.EmptyPackageClass)
-          .withRootImports
-        (state.validObjectIndexes).foldLeft(rootCtx)((ctx, id) =>
-          importPreviousRun(id)(using ctx))
-      }
-    }
+  def newRun(ictx: Context, state: State): Run =
+    val run = new ReplRun(this, ictx, state)
     run.suppressions.initSuspendedMessages(state.context.run)
     run
   end newRun
@@ -197,7 +201,6 @@ class ReplCompiler extends Compiler:
       }
     }
 
-
     val src = SourceFile.virtual("<typecheck>", expr)
     inContext(state.context.fresh
       .setReporter(newStoreReporter)
@@ -244,15 +247,14 @@ class ReplPhase extends Phase:
   def phaseName: String = "repl"
 
   def run(using Context): Unit =
+    import ReplCompiler.ReplState
     ctx.compilationUnit.untpdTree match
     case pkg @ PackageDef(_, stats) =>
-      pkg.getAttachment(ReplCompiler.ReplState).foreach {
-        case given State =>
-          val defs = definitions(stats)
-          val res = wrapped(defs, Span(0, stats.last.span.end))
-          res.putAttachment(ReplCompiler.ReplState, defs.state)
-          ctx.compilationUnit.untpdTree = res
-      }
+      for given State <- pkg.getAttachment(ReplState) do
+        val defs = definitions(stats)
+        val wrappedPkg = wrapped(defs, Span(0, stats.last.span.end))
+        wrappedPkg.putAttachment(ReplState, defs.state)
+        ctx.compilationUnit.untpdTree = wrappedPkg
     case _ =>
   end run
 

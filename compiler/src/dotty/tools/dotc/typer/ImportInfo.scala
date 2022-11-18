@@ -23,7 +23,8 @@ object ImportInfo {
       :: untpd.ImportSelector(untpd.Ident(nme.EMPTY))  // ... and also all given members
       :: Nil
     if ref.isPredef then                               // do not import any2stringadd
-      selectors = untpd.ImportSelector(untpd.Ident(nme.any2stringadd), untpd.Ident(nme.WILDCARD))
+      selectors =
+        untpd.ImportSelector(untpd.Ident(nme.any2stringadd), untpd.Ident(nme.WILDCARD))
         :: selectors
 
     def sym(using Context) =
@@ -32,13 +33,11 @@ object ImportInfo {
 
     ImportInfo(sym, selectors, untpd.EmptyTree, isRootImport = true)
 
-  extension (c: Context)
+  extension (ctx: Context)
     def withRootImports(rootRefs: List[RootRef])(using Context): Context =
-      rootRefs.foldLeft(c)((ctx, ref) => ctx.fresh.setImportInfo(rootImport(ref)))
+      rootRefs.foldLeft(ctx)((ctx, ref) => ctx.fresh.setImportInfo(rootImport(ref)))
 
-    def withRootImports: Context =
-      given Context = c
-      c.withRootImports(defn.rootImportFns)
+    def withRootImports: Context = inContext(ctx)(withRootImports(defn.rootImportFns))
 }
 
 /** Info relating to an import clause
