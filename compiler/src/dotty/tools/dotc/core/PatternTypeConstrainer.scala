@@ -6,12 +6,18 @@ import Decorators._
 import Symbols._
 import Types._
 import Flags._
-import Contexts.ctx
+import Contexts.*
 import dotty.tools.dotc.reporting.trace
 import config.Feature.migrateTo3
 import config.Printers._
 
-trait PatternTypeConstrainer { self: TypeComparer =>
+trait PatternTypeConstrainer {
+  protected given given_Context[DummySoItsADef]: Context
+
+  protected def either(op1: => Boolean, op2: => Boolean): Boolean
+  protected def isSubType(tp1: Type, tp2: Type): Boolean
+
+  protected def rollbackUnless(op: => Boolean): Boolean
 
   /** Derive type and GADT constraints that necessarily follow from a pattern with the given type matching
    *  a scrutinee of the given type.
@@ -73,7 +79,7 @@ trait PatternTypeConstrainer { self: TypeComparer =>
    *  scrutinee and pattern types. This does not apply if the pattern type is only applied to type variables,
    *  in which case the subtyping relationship "heals" the type.
    */
-  def constrainPatternType(pat: Type, scrut: Type, forceInvariantRefinement: Boolean = false): Boolean = trace(i"constrainPatternType($scrut, $pat)", gadts) {
+  def constrainPatternType(pat: Type, scrut: Type, forceInvariantRefinement: Boolean = false): Boolean = trace(i"constrainPatternType($pat, $scrut)", gadts) {
 
     def classesMayBeCompatible: Boolean = {
       import Flags._
@@ -230,7 +236,8 @@ trait PatternTypeConstrainer { self: TypeComparer =>
    *  case classes without also appropriately extending the relevant case class
    *  (see `RefChecks#checkCaseClassInheritanceInvariant`).
    */
-  def constrainSimplePatternType(patternTp: Type, scrutineeTp: Type, forceInvariantRefinement: Boolean): Boolean = {
+  private def constrainSimplePatternType(patternTp: Type, scrutineeTp: Type, forceInvariantRefinement: Boolean): Boolean =
+  trace(i"constrainSimplePatternType($patternTp, $scrutineeTp, forceInvariantRefinement=$forceInvariantRefinement)") {
     def refinementIsInvariant(tp: Type): Boolean = tp match {
       case tp: SingletonType => true
       case tp: ClassInfo => tp.cls.is(Final) || tp.cls.is(Case)
@@ -261,11 +268,10 @@ trait PatternTypeConstrainer { self: TypeComparer =>
     val assumeInvariantRefinement =
       migrateTo3 || forceInvariantRefinement || refinementIsInvariant(patternTp)
 
-    trace(i"constraining simple pattern type $tp >:< $pt", gadts, (res: Boolean) => i"$res gadt = ${ctx.gadt}") {
+    trace(i"constraining simple pattern type $tp >:< $pt assumeInvariantRefinement=$assumeInvariantRefinement", gadts, (res: Boolean) => i"$res gadt = ${ctx.gadt}") {
       (tp, pt) match {
         case (AppliedType(tyconS, argsS), AppliedType(tyconP, argsP)) =>
-          val saved = state.nn.constraint
-          val result =
+          rollbackUnless {
             ctx.gadtState.rollbackGadtUnless {
               tyconS.typeParams.lazyZip(argsS).lazyZip(argsP).forall { (param, argS, argP) =>
                 val variance = param.paramVarianceSign
@@ -283,9 +289,7 @@ trait PatternTypeConstrainer { self: TypeComparer =>
                 else true
               }
             }
-          if !result then
-            constraint = saved
-          result
+          }
         case _ =>
           // Give up if we don't get AppliedType, e.g. if we upcasted to Any.
           // Note that this doesn't mean that patternTp, scrutineeTp cannot possibly

@@ -27,7 +27,7 @@ import cc.{CapturingType, derivedCapturingType, CaptureSet, stripCapturing, isBo
 
 /** Provides methods to compare types.
  */
-class TypeComparer(@constructorOnly initctx: Context) extends ConstraintHandling, PatternTypeConstrainer {
+class TypeComparer(@constructorOnly initctx: Context) extends ConstraintHandling {
   import TypeComparer._
   Stats.record("TypeComparer")
 
@@ -48,6 +48,13 @@ class TypeComparer(@constructorOnly initctx: Context) extends ConstraintHandling
     recCount = 0
     needsGc = false
     if Config.checkTypeComparerReset then checkReset()
+
+  protected def rollbackUnless(op: => Boolean): Boolean =
+    val saved = constraint
+    var success = false
+    try success = op
+    finally if !success then constraint = saved
+    success
 
   private var pendingSubTypes: util.MutableSet[(Type, Type)] | Null = null
   private var recCount = 0
@@ -2891,7 +2898,7 @@ object TypeComparer {
     case OK, Fail, OKwithGADTUsed
 
   /** Class for unification variables used in `natValue`. */
-  private class AnyConstantType extends UncachedGroundType with ValueType {
+  final class AnyConstantType extends UncachedGroundType with ValueType {
     var tpe: Type = NoType
   }
 
@@ -3034,7 +3041,7 @@ object TypeComparer {
     comparing(_.dropTransparentTraits(tp, bound))
 
   def constrainPatternType(pat: Type, scrut: Type, forceInvariantRefinement: Boolean = false)(using Context): Boolean =
-    comparing(_.constrainPatternType(pat, scrut, forceInvariantRefinement))
+    GadtTypeComparer(ctx).constrainPatternType(pat, scrut, forceInvariantRefinement)
 
   def explained[T](op: ExplainingTypeComparer => T, header: String = "Subtype trace:")(using Context): String =
     comparing(_.explained(op, header))

@@ -1417,8 +1417,19 @@ trait Applications extends Compatibility {
             // We ignore whether constraining the pattern succeeded.
             // Constraining only fails if the pattern cannot possibly match,
             // but useless pattern checks detect more such cases, so we simply rely on them instead.
+            var c, c2 = ctx.typerState.constraint
+            var g, g2 = ctx.gadt
+            def pp(s: String) =
+              //println(s)
+              c2 = ctx.typerState.constraint
+              g2 = ctx.gadt
+              //if c2 != c then { c = c2; println(i"$c") }
+              //if g2 != g then { g = g2; println(i"$g") }
+            pp(i"inp: $unapplyArgType vs scrut $selType")
             withMode(Mode.GadtConstraintInference)(TypeComparer.constrainPatternType(unapplyArgType, selType))
+            pp(i"cpt: $unapplyArgType vs scrut $selType")
             val patternBound = maximizeType(unapplyArgType, unapplyFn.span.endPos)
+            pp(i"max: $unapplyArgType vs scrut $selType")
             if (patternBound.nonEmpty) unapplyFn = addBinders(unapplyFn, patternBound)
             unapp.println(i"case 2 $unapplyArgType ${ctx.typerState.constraint}")
             unapplyArgType

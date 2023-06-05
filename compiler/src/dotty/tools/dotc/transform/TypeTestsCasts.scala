@@ -109,9 +109,9 @@ object TypeTestsCasts {
         // If we perform widening, we will get X = Nothing, and we don't have
         // Ident[X] <:< Ident[Int] any more.
         TypeComparer.constrainPatternType(P1, X, forceInvariantRefinement = true)
-        debug.println(
-          TypeComparer.explained(_.constrainPatternType(P1, X, forceInvariantRefinement = true))
-        )
+        //debug.println(
+        //  TypeComparer.explained(_.constrainPatternType(P1, X, forceInvariantRefinement = true))
+        //)
       }
 
       // Maximization of the type means we try to cover all possible values

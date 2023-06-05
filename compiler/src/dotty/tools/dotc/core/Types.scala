@@ -4797,7 +4797,7 @@ object Types {
     def instantiateWith(tp: Type)(using Context): Type = {
       assert(tp ne this, i"self instantiation of $origin, constraint = ${ctx.typerState.constraint}")
       assert(!myInst.exists, i"$origin is already instantiated to $myInst but we attempted to instantiate it to $tp")
-      typr.println(i"instantiating $this with $tp")
+      //println(i"instantiating $this with $tp")
 
       if Config.checkConstraintsSatisfiable then
         assert(currentEntry.bounds.contains(tp),

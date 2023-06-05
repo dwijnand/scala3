@@ -1847,7 +1847,9 @@ class Typer(@constructorOnly nestingLevel: Int = 0) extends Namer
           else report.error(new DuplicateBind(b, cdef), b.srcPos)
           if (!ctx.isAfterTyper) {
             val bounds = ctx.gadt.fullBounds(sym)
-            if (bounds != null) sym.info = bounds
+            if (bounds != null)
+              //println(i"changing sym $sym info from ${sym.info} to $bounds ${bounds.className} ${bounds}")
+              sym.info = bounds
           }
           b
         case t: UnApply if t.symbol.is(Inline) => Inlines.inlinedUnapply(t)
