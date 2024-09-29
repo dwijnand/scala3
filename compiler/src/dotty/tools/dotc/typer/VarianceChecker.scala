@@ -31,30 +31,20 @@ object VarianceChecker {
   def checkLambda(tree: tpd.LambdaTypeTree, bounds: TypeBounds)(using Context): Unit =
     def checkType(tpe: Type): Unit = tpe match
       case tl: HKTypeLambda if tl.isDeclaredVarianceLambda =>
-        val checkOK = new TypeAccumulator[Boolean] {
-          def paramVarianceSign(tref: TypeParamRef) =
-            tl.typeParams(tref.paramNum).paramVarianceSign
-          def error(tref: TypeParamRef) = {
-            val paramName = tl.paramNames(tref.paramNum).toTermName
-            val v = paramVarianceSign(tref)
-            val pos = tree.tparams
-              .find(_.name.toTermName == paramName)
-              .map(_.srcPos)
-              .getOrElse(tree.srcPos)
-            report.error(em"${varianceLabel(v)} type parameter $paramName occurs in ${varianceLabel(variance)} position in ${tl.resType}", pos)
-          }
-          def apply(x: Boolean, t: Type) = x && {
-            t match {
-              case tref: TypeParamRef if tref.binder `eq` tl =>
-                varianceConforms(variance, paramVarianceSign(tref))
-                || { error(tref); false }
-              case AnnotatedType(_, annot) if annot.symbol == defn.UncheckedVarianceAnnot =>
-                x
-              case _ =>
-                foldOver(x, t)
-            }
-          }
-        }
+        val checkOK = new TypeAccumulator[Boolean]:
+          def error(p: TypeParamRef) =
+            val paramName = p.paramName
+            val v = p.lambdaParam.paramVarianceSign
+            val v1 = p.lambdaParam.paramVariance
+            val pos = tree.tparams.collectFirst {
+              case tparam if tparam.name == paramName => tparam.srcPos
+            }.getOrElse(tree.srcPos)
+            report.error(em"${varianceLabel(v)} type parameter ${paramName.toTermName} occurs in ${varianceLabel(variance)} position in ${tl.resType}", pos)
+            false
+          def apply(x: Boolean, t: Type) = x && t.match
+            case p: TypeParamRef if p.binder eq tl                                      => varianceConforms(variance, p.lambdaParam.paramVarianceSign) || error(p)
+            case AnnotatedType(_, annot) if annot.symbol == defn.UncheckedVarianceAnnot => x
+            case _                                                                      => foldOver(x, t)
         checkOK(true, tl.resType)
       case _ =>
     end checkType
@@ -69,23 +59,31 @@ class VarianceChecker(using Context) {
   import tpd.*
 
   private object Validator extends TypeAccumulator[Option[VarianceError]] {
+    def vVarianceSign = if variance == 0 then "v=" else s"v${Variances.varianceSign(variance)}"
+
     private var base: Symbol = uninitialized
 
     /** The variance of a symbol occurrence of `tvar` seen at the level of the definition of `base`.
      *  The search proceeds from `base` to the owner of `tvar`.
      *  Initially the state is the accumulator's variance, but it might change along the search.
      */
-    def relativeVariance(tvar: Symbol, base: Symbol, v: Variance = varianceFromInt(variance)): Variance = /*trace(i"relative variance of $tvar wrt $base, so far: $v")*/
-      if base == tvar.owner then
-        v
-      else if base.is(Param) && base.owner.isTerm && !base.owner.isAllOf(PrivateLocal) then
-        relativeVariance(tvar, paramOuter(base.owner), flip(v))
-      else if base.owner.isTerm || base.owner.is(Package) || base.isAllOf(PrivateLocal) then
-        Bivariant
-      else if base.isAliasType then
-        relativeVariance(tvar, base.owner, Invariant)
-      else
-        relativeVariance(tvar, base.owner, v)
+    def relativeVariance(tvar: Symbol, base: Symbol, v: Variance): Variance =
+    trace.force(i"relVar($tvar, $base${
+      if base.is(Param) then " Param" else ""}${
+      if base.isAllOf(PrivateLocal) then " PrivateLocal" else ""}${
+      if base.isAliasType then " AliasType" else ""
+    }, $v)${
+      if base.maybeOwner.isTerm then " Term" else ""}${
+      if base.maybeOwner.isAllOf(PrivateLocal) then " PrivateLocal" else ""}${
+      if base.maybeOwner.is(Package) then " Package" else ""
+    }"):
+      if base == tvar.owner              then v
+      else if isMethParam(base)          then relativeVariance(tvar, paramOuter(base), flip(v))
+      else if base.owner.isTerm          then Bivariant
+      else if base.owner.is(Package)     then Bivariant
+      else if base.isAllOf(PrivateLocal) then Bivariant
+      else if base.isAliasType           then relativeVariance(tvar, base.owner, Invariant)
+      else                                    relativeVariance(tvar, base.owner, v)
 
     /** The next level to take into account when determining the
      *  relative variance with a method parameter as base. The method
@@ -96,31 +94,29 @@ class VarianceChecker(using Context) {
      *  of enclosing classes. I believe the Scala 2 rules are too lenient in
      *  that respect.
      */
-    private def paramOuter(meth: Symbol) =
-      if (meth.isConstructor) meth.owner.owner else meth.owner
+    private def paramOuter(param: Symbol) =
+      val meth = param.owner
+      if meth.isConstructor then meth.owner.owner else meth.owner
+
+    private def isMethParam(sym: Symbol) =
+      sym.is(Param) && sym.owner.isTerm && !sym.owner.isAllOf(PrivateLocal)
 
     /** Check variance of abstract type `tvar` when referred from `base`. */
-    private def checkVarianceOfSymbol(tvar: Symbol): Option[VarianceError] = {
-      val relative = relativeVariance(tvar, base)
-      if (relative == Bivariant) None
-      else {
-        val required = if variance == 1 then relative else if variance == -1 then flip(relative) else Invariant
-        def tvar_s = s"$tvar (${varianceLabel(tvar.flags)} ${tvar.showLocated})"
-        def base_s = s"$base in ${base.owner}" + (if (base.owner.isClass) "" else " in " + base.owner.enclosingClass)
-        report.log(s"verifying $tvar_s is ${varianceLabel(required)} at $base_s")
-        report.log(s"relative variance: ${varianceLabel(relative)}")
-        report.log(s"current variance: ${this.variance}")
-        report.log(s"owner chain: ${base.ownersIterator.toList}")
-        if (tvar.isOneOf(required)) None
-        else Some(VarianceError(tvar, required))
-      }
+    private def checkVarianceOfSymbol(tvar: Symbol): Option[VarianceError] =
+    trace.force(i"checkVarianceOfSymbol($tvar) $vVarianceSign") {
+      val required = relativeVariance(tvar, base, varianceFromInt(variance))
+      if tvar.isOneOf(required)
+      then None
+      else Some(VarianceError(tvar, required))
+      //else Option.empty[VarianceError]
     }
 
     /** For PolyTypes, type parameters are skipped because they are defined
      *  explicitly (their TypeDefs will be passed here.) For MethodTypes, the
      *  same is true of the parameters (ValDefs).
      */
-    def apply(status: Option[VarianceError], tp: Type): Option[VarianceError] = trace(s"variance checking $tp of $base at $variance", variances) {
+    def apply(status: Option[VarianceError], tp: Type): Option[VarianceError] =
+    trace.force(i"chkVar($tp ${tp.className}) $vVarianceSign", variances) {
       try
         if (status.isDefined) status
         else tp match {
@@ -133,9 +129,26 @@ class VarianceChecker(using Context) {
               case _ => foldOver(status, tp)
             }
           case AnnotatedType(_, annot) if annot.symbol == defn.UncheckedVarianceAnnot =>
+            //println(i"skipping: $tp")
             status
           case tp: ClassInfo =>
             foldOver(status, tp.parents)
+          case TypeBounds(lo, hi) =>
+            val x = status
+            if lo eq hi then atVariance(0)(this(x, lo))
+            else
+              variance = -variance
+              val y = lo match
+                case lo: HKTypeLambda => this(x, lo.resultType)
+                case _                => this(x, lo)
+              variance = -variance
+              val z = hi match
+                //case hi: HKTypeLambda => this(x, hi.resultType)
+                //case _                => this(x, hi)
+                case hi: HKTypeLambda => this(y, hi.resultType)
+                case _                => this(y, hi)
+              //y.orElse(z)
+              z
           case _ =>
             foldOver(status, tp)
         }
@@ -151,12 +164,13 @@ class VarianceChecker(using Context) {
         apply(None, info)
 
     def validateDefinition(base: Symbol): Option[VarianceError] =
+    trace.force(i"validateDefinition($base)"):
       val savedBase = this.base
-      this.base = base
       val savedVariance = variance
       def isLocal =
         base.isAllOf(PrivateLocal)
         || base.is(Private) && !base.hasAnnotation(defn.AssignedNonLocallyAnnot)
+      this.base = base
       if base.is(Mutable, butNot = Method) && !isLocal then
         base.removeAnnotation(defn.AssignedNonLocallyAnnot)
         variance = 0

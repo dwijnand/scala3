@@ -98,7 +98,7 @@ object TypeApplications {
    *        ? >: L <: H
    *
    *  Any other occurrence of `X` in `tycon` is replaced by `U`, if the
-   *  occurrence of `X` in `tycon` is covariant, or nonvariant, or by `L`,
+   *  occurrence of `X` in `tycon` is covariant, or invariant, or by `L`,
    *  if the occurrence is contravariant.
    *
    *  The idea is that the `AllowLambdaWildcardApply` mode is used to check whether

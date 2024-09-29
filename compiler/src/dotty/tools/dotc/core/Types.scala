@@ -4475,25 +4475,14 @@ object Types extends TypeUtils {
 
     private var myVariance: FlagSet = UndefinedFlags
 
-    /** Low level setter, only called from Variances.setStructuralVariances */
-    def storedVariance_= (v: Variance): Unit =
-      myVariance = v
+    def storedVariance_= (v: Variance): Unit = myVariance = v
+    def storedVariance: Variance             = myVariance
 
-    /** Low level getter, only called from Variances.setStructuralVariances */
-    def storedVariance: Variance =
-      myVariance
-
-    /** Set the declared variance of this parameter.
-     *  @pre the containing lambda is a isDeclaredVarianceLambda
-     */
     def declaredVariance_=(v: Variance): Unit =
       assert(tl.isDeclaredVarianceLambda)
       assert(myVariance == UndefinedFlags)
-      myVariance = v
+      myVariance = v.ensuring(tl.isDeclaredVarianceLambda)
 
-    /** The declared variance of this parameter.
-     *  @pre the containing lambda is a isDeclaredVarianceLambda
-     */
     def declaredVariance: Variance =
       assert(tl.isDeclaredVarianceLambda)
       assert(myVariance != UndefinedFlags)
@@ -4503,10 +4492,8 @@ object Types extends TypeUtils {
     def paramVariance(using Context): Variance =
       if myVariance == UndefinedFlags then
         tl match
-          case tl: HKTypeLambda =>
-            setStructuralVariances(tl)
-          case _ =>
-            myVariance = Invariant
+          case tl: HKTypeLambda => setStructuralVariances(tl)
+          case _                => myVariance = Invariant
       myVariance
 
     def toText(printer: Printer): Text = printer.toText(this)
@@ -4699,6 +4686,7 @@ object Types extends TypeUtils {
     type BT <: LambdaType
     def paramNum: Int
     def paramName: binder.ThisName = binder.paramNames(paramNum)
+    def paramInfo: binder.PInfo    = binder.paramInfos(paramNum)
 
     override def underlying(using Context): Type = {
       // TODO: update paramInfos's type to nullable
@@ -4745,6 +4733,7 @@ object Types extends TypeUtils {
     type BT = TypeLambda
     def kindString: String = "Type"
     def copyBoundType(bt: BT): Type = bt.paramRefs(paramNum)
+    def lambdaParam: LambdaParam = binder.typeParams(paramNum)
 
     /** Optimized version of occursIn, avoid quadratic blowup when solving
      *  constraints over large ground types.
@@ -6689,7 +6678,7 @@ object Types extends TypeUtils {
       case tp: LambdaType =>
         val restpe = tp.resultType
         val saved = variance
-        variance = if (defn.MatchCase.isInstance(restpe)) 0 else -variance
+        variance = if defn.MatchCase.isInstance(restpe) then 0 else -variance
         val y = foldOver(x, tp.paramInfos)
         variance = saved
         this(y, restpe)

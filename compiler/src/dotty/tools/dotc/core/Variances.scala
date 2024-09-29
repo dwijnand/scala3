@@ -43,7 +43,7 @@ object Variances {
     narrowVariances.traverse(lam.resType)
 
   /** Does variance `v1` conform to variance `v2`?
-   *  This is the case if the variances are the same or `sym` is nonvariant.
+   *  This is the case if the variances are the same or `sym` is invariant.
    */
   def varianceConforms(v1: Int, v2: Int): Boolean =
     v1 == v2 || v2 == 0

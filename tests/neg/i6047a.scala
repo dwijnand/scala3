@@ -18,7 +18,7 @@ class C[+X] {
   }
 
   def foo[Y <: X](): Unit = ??? // error: covariant type X appears in contravariant position
-  type Foo[Y <: X] <: Y  // error: covariant type X appears in contravariant position
+  type Foo[Y <: X] <: Y
 }
 class D[-X] {
 
