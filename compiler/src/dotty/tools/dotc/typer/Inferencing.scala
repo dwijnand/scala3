@@ -563,7 +563,7 @@ object Inferencing {
      *     (because they influence the minimal solution of `tvar`),
      *   - if `tvar` is contravariant in `vmap`, include all variables in its upper bound
      *     at flipped variances (because they influence the maximal solution of `tvar`),
-     *   - if `tvar` is invariant in `vmap`, include all variables in its upper and lower
+     *   - if `tvar` is nonvariant in `vmap`, include all variables in its upper and lower
      *     bounds as non-variant.
      *  Do this in a fixpoint iteration until `vmap` stabilizes.
      */
@@ -723,10 +723,10 @@ trait Inferencing { this: Typer =>
                   if !cmp.levelOK(tvar.nestingLevel, ctx.nestingLevel) then
                     // Invariant: The type of a tree whose enclosing scope is level
                     // N only contains type variables of level <= N.
-                    typr.println(i"instantiate invariant $tvar of level ${tvar.nestingLevel} to a type variable of level <= ${ctx.nestingLevel}, $constraint")
+                    typr.println(i"instantiate nonvariant $tvar of level ${tvar.nestingLevel} to a type variable of level <= ${ctx.nestingLevel}, $constraint")
                     cmp.atLevel(ctx.nestingLevel, tvar.origin)
                   else
-                    typr.println(i"no interpolation for invariant $tvar in $state")
+                    typr.println(i"no interpolation for nonvariant $tvar in $state")
                 )
           // constrainIfDependentParamRef could also have instantiated tvars added to buf before the check
           buf.filterNot(_._1.isInstantiated).toList

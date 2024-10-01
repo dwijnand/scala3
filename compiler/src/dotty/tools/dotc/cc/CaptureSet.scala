@@ -647,7 +647,7 @@ object CaptureSet:
    *  @param tm       the type map, which is assumed to be idempotent on capture refs
    *                  (except if ccUnsoundMaps is enabled)
    *  @param variance the assumed variance with which types with capturesets of size >= 2 are approximated
-   *                  (i.e. co: full capture set, contra: empty set, invariant is not allowed.)
+   *                  (i.e. co: full capture set, contra: empty set, nonvariant is not allowed.)
    *  @param initial  The initial mappings of source's elements at the point the Mapped set is created.
    */
   class Mapped private[CaptureSet]

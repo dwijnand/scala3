@@ -61,11 +61,6 @@ trait TraceSyntax:
       apply(question, if cond then Printers.default else Printers.noPrinter, show)(op)
     else op
 
-  inline def cond[TC](inline question: String, inline cond: Boolean)(inline op: TC)(using Context): TC =
-    inline if isEnabled then
-      apply(question, if cond then Printers.default else Printers.noPrinter, true)(op)
-    else op
-
   inline def apply[T, U >: T](inline question: String, inline printer: Printers.Printer, inline showOp: U => String)(inline op: T)(using Context): T =
     inline if isEnabled then
       doTrace[T](question, printer, showOp)(op)
@@ -113,7 +108,7 @@ trait TraceSyntax:
       var logctx = ctx
       while logctx.reporter.isInstanceOf[StoreReporter] do logctx = logctx.outer
       def margin = ctx.base.indentTab * ctx.base.indent
-      def doLog(s: String) = println(s)
+      def doLog(s: String) = if isForced then println(s) else report.log(s)(using logctx)
       def finalize(msg: String) =
         if !finalized then
           ctx.base.indent -= 1
